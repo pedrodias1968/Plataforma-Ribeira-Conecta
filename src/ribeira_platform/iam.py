@@ -167,9 +167,11 @@ for _role in ("ANALYST", "OPERATOR", "VIEWER"):
     ROLE_PERMISSIONS[_role] = ROLE_PERMISSIONS[_role] | frozenset({_GEOSPATIAL_READ})
 
 # Soil Intelligence access is tenant-isolated and evidence-backed.
+# Evidence roles (ANALYST, OPERATOR) can read soil data as context for decisions.
+# Domain experts (AGRONOMIST, TECHNICIAN) and management need both read and write access.
 _SOIL_READ = "soil:read"
 _SOIL_WRITE = "soil:write"
-for _role in ROLE_PERMISSIONS:
+for _role in ("ANALYST", "OPERATOR", "TENANT_ADMIN", "MANAGER", "AGRONOMIST", "TECHNICIAN"):
     ROLE_PERMISSIONS[_role] = ROLE_PERMISSIONS[_role] | frozenset({_SOIL_READ})
 for _role in ("TENANT_ADMIN", "MANAGER", "AGRONOMIST", "TECHNICIAN"):
     ROLE_PERMISSIONS[_role] = ROLE_PERMISSIONS[_role] | frozenset({_SOIL_WRITE})

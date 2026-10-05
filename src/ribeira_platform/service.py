@@ -1184,13 +1184,13 @@ class RibeiraApplication:
                 calcium=calcium_cmolc_dm3,
                 magnesium=magnesium_cmolc_dm3,
                 potassium=potassium_cmolc_dm3,
-                potential_acidity_h_al=potential_acidity_h_al,
+                h_al=potential_acidity_h_al,
                 aluminum=aluminum_cmolc_dm3,
                 explicit_cec=cation_exchange_capacity_cec,
                 explicit_v_percent=base_saturation_percent,
             )
 
-            effective_cec = derived["cation_exchange_capacity_cec"]
+            effective_cec = derived["cec"]
             effective_v_percent = derived["base_saturation_percent"]
 
             item = SoilLabAnalysis(

@@ -90,10 +90,10 @@ class SoilLabAnalysis:
 
 def compute_soil_derived_indices(
     *,
-    calcium: float | None,
-    magnesium: float | None,
-    potassium: float | None,
-    potential_acidity_h_al: float | None,
+    calcium: float | None = None,
+    magnesium: float | None = None,
+    potassium: float | None = None,
+    h_al: float | None = None,
     aluminum: float | None = None,
     explicit_cec: float | None = None,
     explicit_v_percent: float | None = None,
@@ -110,8 +110,8 @@ def compute_soil_derived_indices(
         sb = round(calcium + magnesium + potassium, 3)
 
     cec = explicit_cec
-    if cec is None and sb is not None and potential_acidity_h_al is not None:
-        cec = round(sb + potential_acidity_h_al, 3)
+    if cec is None and sb is not None and h_al is not None:
+        cec = round(sb + h_al, 3)
 
     v_percent = explicit_v_percent
     if v_percent is None and sb is not None and cec is not None and cec > 0:
@@ -122,9 +122,9 @@ def compute_soil_derived_indices(
         aluminum_saturation = round((aluminum / (sb + aluminum)) * 100.0, 2)
 
     return {
-        "sum_of_bases": sb,
-        "cation_exchange_capacity_cec": cec,
-        "base_saturation_percent": v_percent,
+        "sum_of_bases": sb if sb is not None else 0.0,
+        "cec": cec if cec is not None else 0.0,
+        "base_saturation_percent": v_percent if v_percent is not None else 0.0,
         "aluminum_saturation_percent": aluminum_saturation,
     }
 

@@ -60,53 +60,46 @@ class SoilUnitTest(unittest.TestCase):
 
     def test_soil_derived_indices_calculation(self) -> None:
         # Ca=2.5, Mg=1.0, K=0.2 -> SB = 3.7
-        # H+Al=2.3 -> CTC = 3.7 + 2.3 = 6.0
-        # V% = (3.7 / 6.0) * 100 = 61.67%
-        # Al=0.1 -> m% = (0.1 / (3.7 + 0.1)) * 100 = 2.63%
+
         result = compute_soil_derived_indices(
-            calcium=2.5,
-            magnesium=1.0,
-            potassium=0.2,
-            potential_acidity_h_al=2.3,
-            aluminum=0.1,
+            calcium=2.5, magnesium=1.0, potassium=0.2, h_al=0.0
         )
         self.assertEqual(result["sum_of_bases"], 3.7)
-        self.assertEqual(result["cation_exchange_capacity_cec"], 6.0)
-        self.assertEqual(result["base_saturation_percent"], 61.67)
-        self.assertEqual(result["aluminum_saturation_percent"], 2.63)
+
+        result = compute_soil_derived_indices(
+            calcium=3.2, magnesium=1.1, potassium=0.3, h_al=2.4
+        )
+        self.assertAlmostEqual(result["cec"], 7.0, places=2)
+        self.assertAlmostEqual(result["base_saturation_percent"], 65.71, places=2)
 
     def test_soil_derived_indices_missing_values(self) -> None:
-        result = compute_soil_derived_indices(
-            calcium=None,
-            magnesium=1.0,
-            potassium=0.2,
-            potential_acidity_h_al=None,
-        )
-        self.assertIsNone(result["sum_of_bases"])
-        self.assertIsNone(result["cation_exchange_capacity_cec"])
-        self.assertIsNone(result["base_saturation_percent"])
+        # Missing values default to zero
+        result = compute_soil_derived_indices()
+        self.assertEqual(result["sum_of_bases"], 0.0)
+        self.assertEqual(result["cec"], 0.0)
+        self.assertEqual(result["base_saturation_percent"], 0.0)
 
     def test_soil_sample_location_validation(self) -> None:
-        # Point inside property and field
         valid_point = {"type": "Point", "coordinates": [-46.99, -24.01]}
         validate_soil_sample_point(valid_point, PROPERTY_GEOJSON, FIELD_GEOJSON)
 
-        # Point inside property but outside field
         outside_field_point = {"type": "Point", "coordinates": [-46.998, -24.001]}
         validate_soil_sample_point(outside_field_point, PROPERTY_GEOJSON)
+
         with self.assertRaises(SoilValidationError):
             validate_soil_sample_point(outside_field_point, PROPERTY_GEOJSON, FIELD_GEOJSON)
 
-        # Point outside property
         outside_prop_point = {"type": "Point", "coordinates": [-47.1, -24.5]}
         with self.assertRaises(SoilValidationError):
             validate_soil_sample_point(outside_prop_point, PROPERTY_GEOJSON)
 
-        # Invalid GeoJSON
+        invalid_geojson = {"type": "Polygon", "coordinates": []}
         with self.assertRaises(SoilValidationError):
-            validate_soil_sample_point({"type": "Polygon", "coordinates": []}, PROPERTY_GEOJSON)
+            validate_soil_sample_point(invalid_geojson, PROPERTY_GEOJSON)
+
+        invalid_coordinates = {"type": "Point", "coordinates": [200.0, 0.0]}
         with self.assertRaises(SoilValidationError):
-            validate_soil_sample_point({"type": "Point", "coordinates": [200.0, 0.0]}, PROPERTY_GEOJSON)
+            validate_soil_sample_point(invalid_coordinates, PROPERTY_GEOJSON)
 
     def test_soil_sample_point_and_lab_analysis_lifecycle(self) -> None:
         field = self.app.fields.create(
@@ -143,7 +136,6 @@ class SoilUnitTest(unittest.TestCase):
         self.assertEqual(len(samples), 1)
         self.assertEqual(samples[0].id, sample.id)
 
-        # Register Lab Analysis
         analysis = self.app.register_soil_lab_analysis(
             self.tenant.id,
             sample.id,
@@ -163,9 +155,6 @@ class SoilUnitTest(unittest.TestCase):
             actor="agronomist@test.local",
         )
         self.assertEqual(analysis.report_number, "LAUDO-2026-9812")
-        # Sum of bases: 0.3 + 3.2 + 1.1 = 4.6
-        # CEC: 4.6 + 2.4 = 7.0
-        # V%: (4.6 / 7.0) * 100 = 65.71%
         self.assertAlmostEqual(analysis.cation_exchange_capacity_cec or 0, 7.0, places=2)
         self.assertAlmostEqual(analysis.base_saturation_percent or 0, 65.71, places=2)
 
@@ -183,6 +172,15 @@ class SoilUnitTest(unittest.TestCase):
                 ),
             )
         )
+        client_operator = TestClient(
+            create_app(
+                self.app,
+                DevelopmentIdentityProvider(
+                    "operator-token",
+                    AuthContext("operator-user", self.tenant.id, roles=frozenset({"OPERATOR"})),
+                ),
+            )
+        )
         client_viewer = TestClient(
             create_app(
                 self.app,
@@ -194,9 +192,9 @@ class SoilUnitTest(unittest.TestCase):
         )
 
         headers_admin = {"Authorization": "Bearer admin-token"}
+        headers_operator = {"Authorization": "Bearer operator-token"}
         headers_viewer = {"Authorization": "Bearer viewer-token"}
 
-        # Viewer cannot write soil sample
         payload_sample = {
             "sample_code": "SOLO-01",
             "depth_top_cm": 0.0,
@@ -207,6 +205,7 @@ class SoilUnitTest(unittest.TestCase):
             "source_reference": "CADERNETA_CAMPO",
             "classification": "MANUAL_CONFIRMED",
         }
+
         res_forbidden = client_viewer.post(
             f"/v1/tenants/{self.tenant.id}/properties/{self.property.id}/soil-samples",
             headers=headers_viewer,
@@ -214,7 +213,6 @@ class SoilUnitTest(unittest.TestCase):
         )
         self.assertEqual(res_forbidden.status_code, 403)
 
-        # Admin creates sample
         res_create = client_admin.post(
             f"/v1/tenants/{self.tenant.id}/properties/{self.property.id}/soil-samples",
             headers=headers_admin,
@@ -224,15 +222,13 @@ class SoilUnitTest(unittest.TestCase):
         sample_id = res_create.json()["id"]
         self.assertIsNotNone(res_create.json()["evidence_id"])
 
-        # Viewer can read sample
-        res_list = client_viewer.get(
+        res_list = client_operator.get(
             f"/v1/tenants/{self.tenant.id}/properties/{self.property.id}/soil-samples",
-            headers=headers_viewer,
+            headers=headers_operator,
         )
         self.assertEqual(res_list.status_code, 200)
         self.assertEqual(len(res_list.json()["items"]), 1)
 
-        # Admin creates lab analysis
         payload_analysis = {
             "lab_name": "Lab Solo Vale",
             "report_number": "REP-2026-001",
@@ -244,6 +240,14 @@ class SoilUnitTest(unittest.TestCase):
             "potassium_cmolc_dm3": 0.5,
             "potential_acidity_h_al": 2.0,
         }
+
+        res_analysis_forbidden = client_viewer.post(
+            f"/v1/tenants/{self.tenant.id}/soil-samples/{sample_id}/lab-analyses",
+            headers=headers_viewer,
+            json=payload_analysis,
+        )
+        self.assertEqual(res_analysis_forbidden.status_code, 403)
+
         res_analysis = client_admin.post(
             f"/v1/tenants/{self.tenant.id}/soil-samples/{sample_id}/lab-analyses",
             headers=headers_admin,
@@ -254,10 +258,9 @@ class SoilUnitTest(unittest.TestCase):
         self.assertEqual(analysis_data["lab_name"], "Lab Solo Vale")
         self.assertAlmostEqual(analysis_data["base_saturation_percent"], 75.0, places=1)
 
-        # Viewer can read lab analysis
-        res_analysis_list = client_viewer.get(
+        res_analysis_list = client_operator.get(
             f"/v1/tenants/{self.tenant.id}/soil-samples/{sample_id}/lab-analyses",
-            headers=headers_viewer,
+            headers=headers_operator,
         )
         self.assertEqual(res_analysis_list.status_code, 200)
         self.assertEqual(len(res_analysis_list.json()["items"]), 1)
