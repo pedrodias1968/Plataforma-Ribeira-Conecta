@@ -65,10 +65,12 @@ class BoundaryImportApprovalPostgresTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         try:
-            delete_test_tenants(self.tenant_ids)
-        finally:
             self.store.close()
-            self.temporary.cleanup()
+        finally:
+            try:
+                delete_test_tenants(self.tenant_ids)
+            finally:
+                self.temporary.cleanup()
 
     def tenant(self, name: str):
         value = self.application.create_tenant(name)

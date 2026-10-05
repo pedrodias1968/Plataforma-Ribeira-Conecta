@@ -136,9 +136,9 @@ class GeospatialPostgresTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         try:
-            delete_test_tenants(self._test_tenant_ids)
-        finally:
             self.store.close()
+        finally:
+            delete_test_tenants(self._test_tenant_ids)
 
     def test_postgis_scene_and_rls_block_cross_tenant_access(self) -> None:
         tenant_a = self.create_test_tenant("Geo A")

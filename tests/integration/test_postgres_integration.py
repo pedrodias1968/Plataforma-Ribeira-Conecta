@@ -437,9 +437,9 @@ class PostgresIntegrationTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         try:
-            delete_test_tenants(self._test_tenant_ids)
-        finally:
             self.store.close()
+        finally:
+            delete_test_tenants(self._test_tenant_ids)
 
     def test_property_refresh_policy_is_durable_and_rls_scoped(self) -> None:
         tenant_a = self.create_test_tenant("Refresh policy tenant A")

@@ -61,9 +61,9 @@ class IdentityProvisioningPostgresTests(unittest.TestCase):
                         "DELETE FROM iam_role WHERE id = ANY(%s)",
                         (self.test_role_ids,),
                     )
-            delete_test_tenants(self.tenant_ids)
         finally:
             self.store.close()
+        delete_test_tenants(self.tenant_ids)
 
     def tenant(self, name: str):
         tenant = self.application.create_tenant(name)

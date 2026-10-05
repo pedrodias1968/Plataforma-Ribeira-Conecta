@@ -278,6 +278,44 @@ class FloodExposureAssessmentRequest(BaseModel):
     exposure_zone_id: str | None = Field(default=None, min_length=1, max_length=200)
 
 
+class SoilSamplePointRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    sample_code: str = Field(min_length=1, max_length=100)
+    depth_top_cm: float = Field(ge=0)
+    depth_bottom_cm: float = Field(gt=0)
+    collection_date: str
+    collector_name: str = Field(min_length=1, max_length=200)
+    location_geojson: dict[str, Any]
+    location_crs: str = Field(default="EPSG:4326")
+    classification: DataClassification = DataClassification.MANUAL_CONFIRMED
+    source_reference: str = Field(min_length=1, max_length=500)
+    field_id: str | None = None
+    status: str = Field(default="COLLECTED")
+
+
+class SoilLabAnalysisRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    lab_name: str = Field(min_length=1, max_length=200)
+    report_number: str = Field(min_length=1, max_length=100)
+    report_date: str
+    ph_h2o: float | None = None
+    ph_cacl2: float | None = None
+    organic_matter_g_dm3: float | None = None
+    phosphorus_mg_dm3: float | None = None
+    potassium_cmolc_dm3: float | None = None
+    calcium_cmolc_dm3: float | None = None
+    magnesium_cmolc_dm3: float | None = None
+    aluminum_cmolc_dm3: float | None = None
+    potential_acidity_h_al: float | None = None
+    cation_exchange_capacity_cec: float | None = None
+    base_saturation_percent: float | None = None
+    clay_percent: float | None = None
+    silt_percent: float | None = None
+    sand_percent: float | None = None
+    raw_attributes: dict[str, Any] = Field(default_factory=dict)
+    classification: DataClassification = DataClassification.MANUAL_CONFIRMED
+
+
 class CustomerRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     display_name: str = Field(min_length=1, max_length=240)
@@ -981,6 +1019,20 @@ def create_app(
         payload["evidence_id"] = evidence.id if evidence is not None else None
         return payload
 
+    def safe_soil_sample_point(item: Any) -> dict[str, Any]:
+        """Expose georeferenced soil sample point with tenant evidence reference."""
+        payload = to_jsonable(item)
+        evidence = application.store.evidence_for_reference(item.tenant_id, item.id)
+        payload["evidence_id"] = evidence.id if evidence is not None else None
+        return payload
+
+    def safe_soil_lab_analysis(item: Any) -> dict[str, Any]:
+        """Expose laboratory soil analysis report with tenant evidence reference."""
+        payload = to_jsonable(item)
+        evidence = application.store.evidence_for_reference(item.tenant_id, item.id)
+        payload["evidence_id"] = evidence.id if evidence is not None else None
+        return payload
+
     def safe_product(item: Any) -> dict[str, Any]:
         stats = item.statistics
         return {
@@ -1451,6 +1503,113 @@ def create_app(
         return {
             "property_id": property_id,
             "items": [safe_asset(item) for item in items],
+        }
+
+    @app.post(
+        "/v1/tenants/{tenant_id}/properties/{property_id}/soil-samples",
+        status_code=201,
+        tags=["farm-360", "soil"],
+    )
+    async def create_soil_sample_point(
+        tenant_id: str,
+        property_id: str,
+        payload: SoilSamplePointRequest,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "soil:write", tenant_id)
+        item = application.register_soil_sample_point(
+            tenant_id,
+            property_id,
+            sample_code=payload.sample_code,
+            depth_top_cm=payload.depth_top_cm,
+            depth_bottom_cm=payload.depth_bottom_cm,
+            collection_date=payload.collection_date,
+            collector_name=payload.collector_name,
+            location_geojson=payload.location_geojson,
+            location_crs=payload.location_crs,
+            classification=payload.classification,
+            source_reference=payload.source_reference,
+            field_id=payload.field_id,
+            status=payload.status,
+            actor=ctx.subject,
+            platform_admin=ctx.is_platform_admin,
+        )
+        return safe_soil_sample_point(item)
+
+    @app.get(
+        "/v1/tenants/{tenant_id}/properties/{property_id}/soil-samples",
+        tags=["farm-360", "soil"],
+    )
+    async def list_soil_sample_points(
+        tenant_id: str,
+        property_id: str,
+        field_id: str | None = None,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "soil:read", tenant_id)
+        items = application.list_soil_sample_points(
+            tenant_id, property_id, field_id=field_id, platform_admin=ctx.is_platform_admin
+        )
+        return {
+            "property_id": property_id,
+            "items": [safe_soil_sample_point(item) for item in items],
+        }
+
+    @app.post(
+        "/v1/tenants/{tenant_id}/soil-samples/{sample_id}/lab-analyses",
+        status_code=201,
+        tags=["farm-360", "soil"],
+    )
+    async def create_soil_lab_analysis(
+        tenant_id: str,
+        sample_id: str,
+        payload: SoilLabAnalysisRequest,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "soil:write", tenant_id)
+        item = application.register_soil_lab_analysis(
+            tenant_id,
+            sample_id,
+            lab_name=payload.lab_name,
+            report_number=payload.report_number,
+            report_date=payload.report_date,
+            ph_h2o=payload.ph_h2o,
+            ph_cacl2=payload.ph_cacl2,
+            organic_matter_g_dm3=payload.organic_matter_g_dm3,
+            phosphorus_mg_dm3=payload.phosphorus_mg_dm3,
+            potassium_cmolc_dm3=payload.potassium_cmolc_dm3,
+            calcium_cmolc_dm3=payload.calcium_cmolc_dm3,
+            magnesium_cmolc_dm3=payload.magnesium_cmolc_dm3,
+            aluminum_cmolc_dm3=payload.aluminum_cmolc_dm3,
+            potential_acidity_h_al=payload.potential_acidity_h_al,
+            cation_exchange_capacity_cec=payload.cation_exchange_capacity_cec,
+            base_saturation_percent=payload.base_saturation_percent,
+            clay_percent=payload.clay_percent,
+            silt_percent=payload.silt_percent,
+            sand_percent=payload.sand_percent,
+            raw_attributes=payload.raw_attributes,
+            classification=payload.classification,
+            actor=ctx.subject,
+            platform_admin=ctx.is_platform_admin,
+        )
+        return safe_soil_lab_analysis(item)
+
+    @app.get(
+        "/v1/tenants/{tenant_id}/soil-samples/{sample_id}/lab-analyses",
+        tags=["farm-360", "soil"],
+    )
+    async def list_soil_lab_analyses(
+        tenant_id: str,
+        sample_id: str,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "soil:read", tenant_id)
+        items = application.list_soil_lab_analyses(
+            tenant_id, sample_id, platform_admin=ctx.is_platform_admin
+        )
+        return {
+            "sample_point_id": sample_id,
+            "items": [safe_soil_lab_analysis(item) for item in items],
         }
 
     @app.post("/v1/tenants/{tenant_id}/sources", status_code=201, tags=["sources"])

@@ -52,9 +52,9 @@ class PropertyPortfolioPostgresTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         try:
-            delete_test_tenants(self.tenant_ids)
-        finally:
             self.store.close()
+        finally:
+            delete_test_tenants(self.tenant_ids)
 
     def tenant(self, name: str):
         item = self.application.create_tenant(name)

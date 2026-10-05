@@ -53,9 +53,9 @@ class OidcMembershipIntegrationTests(unittest.TestCase):
                 self.store.connection.execute(
                     "DELETE FROM iam_role WHERE id=%s", (self.role_id,)
                 )
-            delete_test_tenants([self.tenant_a.id, self.tenant_b.id])
         finally:
             self.store.close()
+        delete_test_tenants([self.tenant_a.id, self.tenant_b.id])
 
     def test_local_membership_resolves_identity_and_cross_tenant_is_denied(
         self,

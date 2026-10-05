@@ -17,6 +17,7 @@ from .property_refresh import PropertyRefreshService
 from .models import (
     BoundaryImport,
     DecisionResult,
+    Evidence,
     FetchResult,
     Property,
     PilotFeedback,
@@ -33,6 +34,13 @@ from .boundary_imports import (
     validate_import_filename,
 )
 from .field_context import FieldContextApplication
+from .soil import (
+    SoilLabAnalysis,
+    SoilRepository,
+    SoilSamplePoint,
+    compute_soil_derived_indices,
+    validate_soil_sample_point,
+)
 from .sources import HttpJsonSourceAdapter, SourceAdapter
 from .object_storage import LocalObjectStorage
 from .iam import AuthorizationError
@@ -67,6 +75,7 @@ class RibeiraApplication:
         self.evidence = EvidenceEngine(self.store)
         self.fields = FieldContextApplication(self.store)
         self.business = BusinessApplication(self.store)
+        self.soil = SoilRepository(self.store)
         registry = default_copernicus_registry()
         self.geospatial_provider = geospatial_provider or CopernicusStacAdapter(
             registry
@@ -1034,3 +1043,225 @@ class RibeiraApplication:
                 now_utc(),
             )
             return assessment
+
+    def register_soil_sample_point(
+        self,
+        tenant_id: str,
+        property_id: str,
+        *,
+        sample_code: str,
+        depth_top_cm: float,
+        depth_bottom_cm: float,
+        collection_date: str,
+        collector_name: str,
+        location_geojson: dict[str, Any],
+        location_crs: str = "EPSG:4326",
+        classification: DataClassification = DataClassification.MANUAL_CONFIRMED,
+        source_reference: str,
+        field_id: str | None = None,
+        status: str = "COLLECTED",
+        actor: str = "system",
+        platform_admin: bool = False,
+    ) -> SoilSamplePoint:
+        """Register a georeferenced soil sample collection point."""
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            prop = self.store.get_property(tenant_id, property_id)
+            if prop is None:
+                raise LookupError("property not found in tenant")
+
+            field_item = None
+            if field_id:
+                field_item = self.fields.repository.get(tenant_id, field_id)
+                if field_item is None or field_item.property_id != property_id:
+                    raise LookupError("field context not found for property")
+
+            validate_soil_sample_point(
+                location_geojson,
+                prop.geometry_geojson,
+                field_item.geometry_geojson if field_item else None,
+            )
+
+            item = SoilSamplePoint(
+                id=new_id(),
+                tenant_id=tenant_id,
+                property_id=property_id,
+                field_id=field_id,
+                sample_code=sample_code.strip(),
+                depth_top_cm=depth_top_cm,
+                depth_bottom_cm=depth_bottom_cm,
+                collection_date=collection_date,
+                collector_name=collector_name.strip(),
+                location_geojson=location_geojson,
+                location_crs=location_crs,
+                classification=classification,
+                source_reference=source_reference.strip(),
+                status=status,
+                created_at=now_utc(),
+            )
+            self.soil.create_sample_point(item, actor=actor)
+            self.store.create_evidence(
+                Evidence(
+                    id=new_id(),
+                    tenant_id=tenant_id,
+                    evidence_type="SOIL_SAMPLE",
+                    reference_id=item.id,
+                    classification=classification,
+                    source_id=None,
+                    observed_at=collection_date,
+                    transformation="georeferenced soil sample collection point registered with location and depth constraints",
+                    limitations=[
+                        "sample point represents physical field collection location and depth window",
+                        "it is not a laboratory measurement or agronomic diagnosis until analyzed",
+                    ],
+                )
+            )
+            self.store.audit(
+                tenant_id,
+                actor,
+                "SOIL_SAMPLE_REGISTERED",
+                "soil_sample_point",
+                item.id,
+                {
+                    "property_id": property_id,
+                    "field_id": field_id,
+                    "sample_code": sample_code,
+                    "depth_top_cm": depth_top_cm,
+                    "depth_bottom_cm": depth_bottom_cm,
+                    "collector_name": collector_name,
+                },
+                new_id(),
+                now_utc(),
+            )
+            return item
+
+    def list_soil_sample_points(
+        self,
+        tenant_id: str,
+        property_id: str,
+        field_id: str | None = None,
+        *,
+        platform_admin: bool = False,
+    ) -> list[SoilSamplePoint]:
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            if self.store.get_property(tenant_id, property_id) is None:
+                raise LookupError("property not found in tenant")
+            return self.soil.list_sample_points(tenant_id, property_id, field_id)
+
+    def register_soil_lab_analysis(
+        self,
+        tenant_id: str,
+        sample_point_id: str,
+        *,
+        lab_name: str,
+        report_number: str,
+        report_date: str,
+        ph_h2o: float | None = None,
+        ph_cacl2: float | None = None,
+        organic_matter_g_dm3: float | None = None,
+        phosphorus_mg_dm3: float | None = None,
+        potassium_cmolc_dm3: float | None = None,
+        calcium_cmolc_dm3: float | None = None,
+        magnesium_cmolc_dm3: float | None = None,
+        aluminum_cmolc_dm3: float | None = None,
+        potential_acidity_h_al: float | None = None,
+        cation_exchange_capacity_cec: float | None = None,
+        base_saturation_percent: float | None = None,
+        clay_percent: float | None = None,
+        silt_percent: float | None = None,
+        sand_percent: float | None = None,
+        raw_attributes: dict[str, Any] | None = None,
+        classification: DataClassification = DataClassification.MANUAL_CONFIRMED,
+        actor: str = "system",
+        platform_admin: bool = False,
+    ) -> SoilLabAnalysis:
+        """Register an accredited laboratory chemical and physical soil analysis."""
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            sample = self.soil.get_sample_point(tenant_id, sample_point_id)
+            if sample is None:
+                raise LookupError("soil sample point not found in tenant")
+
+            derived = compute_soil_derived_indices(
+                calcium=calcium_cmolc_dm3,
+                magnesium=magnesium_cmolc_dm3,
+                potassium=potassium_cmolc_dm3,
+                potential_acidity_h_al=potential_acidity_h_al,
+                aluminum=aluminum_cmolc_dm3,
+                explicit_cec=cation_exchange_capacity_cec,
+                explicit_v_percent=base_saturation_percent,
+            )
+
+            effective_cec = derived["cation_exchange_capacity_cec"]
+            effective_v_percent = derived["base_saturation_percent"]
+
+            item = SoilLabAnalysis(
+                id=new_id(),
+                tenant_id=tenant_id,
+                sample_point_id=sample_point_id,
+                lab_name=lab_name.strip(),
+                report_number=report_number.strip(),
+                report_date=report_date,
+                ph_h2o=ph_h2o,
+                ph_cacl2=ph_cacl2,
+                organic_matter_g_dm3=organic_matter_g_dm3,
+                phosphorus_mg_dm3=phosphorus_mg_dm3,
+                potassium_cmolc_dm3=potassium_cmolc_dm3,
+                calcium_cmolc_dm3=calcium_cmolc_dm3,
+                magnesium_cmolc_dm3=magnesium_cmolc_dm3,
+                aluminum_cmolc_dm3=aluminum_cmolc_dm3,
+                potential_acidity_h_al=potential_acidity_h_al,
+                cation_exchange_capacity_cec=effective_cec,
+                base_saturation_percent=effective_v_percent,
+                clay_percent=clay_percent,
+                silt_percent=silt_percent,
+                sand_percent=sand_percent,
+                raw_attributes=raw_attributes or {},
+                classification=classification,
+                created_at=now_utc(),
+            )
+            self.soil.create_lab_analysis(item, actor=actor)
+            self.store.create_evidence(
+                Evidence(
+                    id=new_id(),
+                    tenant_id=tenant_id,
+                    evidence_type="SOIL_LAB_ANALYSIS",
+                    reference_id=item.id,
+                    classification=classification,
+                    source_id=None,
+                    observed_at=report_date,
+                    transformation="laboratory soil analysis report registered with standard agronomic calculations",
+                    limitations=[
+                        "laboratory analysis applies strictly to the sampled depth, point and date",
+                        "it is not a whole-farm fertility generalization without spatial modeling",
+                    ],
+                )
+            )
+            self.store.audit(
+                tenant_id,
+                actor,
+                "SOIL_LAB_ANALYSIS_REGISTERED",
+                "soil_lab_analysis",
+                item.id,
+                {
+                    "sample_point_id": sample_point_id,
+                    "lab_name": lab_name,
+                    "report_number": report_number,
+                    "ph_h2o": ph_h2o,
+                    "base_saturation_percent": effective_v_percent,
+                    "cation_exchange_capacity_cec": effective_cec,
+                },
+                new_id(),
+                now_utc(),
+            )
+            return item
+
+    def list_soil_lab_analyses(
+        self,
+        tenant_id: str,
+        sample_point_id: str,
+        *,
+        platform_admin: bool = False,
+    ) -> list[SoilLabAnalysis]:
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            if self.soil.get_sample_point(tenant_id, sample_point_id) is None:
+                raise LookupError("soil sample point not found in tenant")
+            return self.soil.list_lab_analyses(tenant_id, sample_point_id)

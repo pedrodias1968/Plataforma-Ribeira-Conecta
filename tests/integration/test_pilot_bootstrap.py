@@ -28,10 +28,12 @@ class PilotBootstrapPostgresTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         try:
-            delete_test_tenants([self.plan.tenant_id])
-        finally:
             self.store.close()
-            self.temporary.cleanup()
+        finally:
+            try:
+                delete_test_tenants([self.plan.tenant_id])
+            finally:
+                self.temporary.cleanup()
 
     def _write_package(self):
         boundary = {
