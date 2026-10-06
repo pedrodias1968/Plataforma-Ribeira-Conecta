@@ -1044,6 +1044,26 @@ class RibeiraApplication:
             )
             return assessment
 
+    def list_flood_exposure_assessments(
+        self,
+        tenant_id: str,
+        *,
+        event_key: str | None = None,
+        subject_type: str | None = None,
+        property_id: str | None = None,
+        asset_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        if not isinstance(self.store, PostgresStore):
+            raise RuntimeError("flood exposure assessments require PostgreSQL/PostGIS")
+        with self.store.tenant_transaction(tenant_id, False):
+            return self.store.list_flood_exposure_assessments(
+                tenant_id,
+                event_key=event_key,
+                subject_type=subject_type,
+                property_id=property_id,
+                asset_id=asset_id,
+            )
+
     def register_soil_sample_point(
         self,
         tenant_id: str,

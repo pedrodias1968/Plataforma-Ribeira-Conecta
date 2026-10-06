@@ -120,6 +120,26 @@ export interface PilotFeedback {
   message: string;
   created_at: string;
 }
+export interface FloodExposureAssessment {
+  id: string;
+  tenant_id: string;
+  event_id: string;
+  event_key: string;
+  exposure_zone_id: string | null;
+  subject_type: "PROPERTY" | "ASSET";
+  property_id: string | null;
+  asset_id: string | null;
+  status: "EXPOSED" | "NOT_EXPOSED" | "UNKNOWN";
+  classification: "CALCULATED" | "UNKNOWN";
+  method: string;
+  intersection_km2: number | null;
+  limitations: string[];
+  provenance: Record<string, unknown>;
+  assessed_at: string;
+  created_at: string;
+  property_geometry_geojson?: Geometry | null;
+  asset_geometry_geojson?: Geometry | null;
+}
 export interface PropertyDecision {
   id: string;
   property_id: string;

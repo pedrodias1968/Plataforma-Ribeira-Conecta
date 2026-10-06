@@ -1207,6 +1207,58 @@ class PostgresStore:
             raise RuntimeError("flood exposure assessment was not persisted")
         return dict(row)
 
+    def list_flood_exposure_assessments(
+        self,
+        tenant_id: str,
+        *,
+        event_key: str | None = None,
+        subject_type: str | None = None,
+        property_id: str | None = None,
+        asset_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List tenant-scoped flood exposure assessments with optional filters."""
+        conditions = ["ta.tenant_id=%s"]
+        params: list[Any] = [tenant_id]
+        if event_key is not None:
+            conditions.append("e.event_key=%s")
+            params.append(event_key)
+        if subject_type is not None:
+            conditions.append("ta.subject_type=%s")
+            params.append(subject_type)
+        if property_id is not None:
+            conditions.append("ta.property_id=%s")
+            params.append(property_id)
+        if asset_id is not None:
+            conditions.append("ta.asset_id=%s")
+            params.append(asset_id)
+
+        where_clause = " AND ".join(conditions)
+        rows = self.connection.execute(
+            f"""SELECT ta.id,ta.event_id,e.event_key,ta.exposure_zone_id,ta.subject_type,
+                      ta.property_id,ta.asset_id,ta.status,ta.classification,ta.method,
+                      ta.intersection_km2,ta.limitations,ta.provenance,ta.assessed_at,ta.created_at,
+                      ST_AsGeoJSON(p.geometry) AS property_geometry,
+                      ST_AsGeoJSON(a.geometry) AS asset_geometry
+                 FROM tenant_flood_exposure_assessment ta
+                 LEFT JOIN operational_event e ON ta.event_id=e.id
+                 LEFT JOIN property p ON ta.property_id=p.id
+                 LEFT JOIN asset a ON ta.asset_id=a.id
+                WHERE {where_clause}
+                ORDER BY ta.assessed_at DESC""",
+            tuple(params),
+        ).fetchall()
+        result = []
+        for row in rows:
+            record = dict(row)
+            if record["property_geometry"]:
+                record["property_geometry_geojson"] = json.loads(record["property_geometry"])
+            if record["asset_geometry"]:
+                record["asset_geometry_geojson"] = json.loads(record["asset_geometry"])
+            record["limitations"] = json.loads(record["limitations"])
+            record["provenance"] = json.loads(record["provenance"])
+            result.append(record)
+        return result
+
     def _one(self, sql: str, params: Iterable[Any] = ()) -> dict[str, Any] | None:
         return self.connection.execute(sql, tuple(params)).fetchone()
 

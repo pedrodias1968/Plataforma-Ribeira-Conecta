@@ -21,6 +21,7 @@ import type {
   TemporalComparison,
   TemporalDeltaEvaluation,
   TimelineItem,
+  FloodExposureAssessment,
 } from "../types/farm360";
 
 export class ApiError extends Error {
@@ -357,6 +358,22 @@ export class Farm360Api {
     return this.post<BoundaryImport>(
       `/v1/tenants/${encodeURIComponent(tenantId)}/boundary-imports/${encodeURIComponent(importId)}/reject`,
       { review_reason: reviewReason },
+    );
+  }
+  floodExposureAssessments(
+    tenantId: string,
+    eventId?: string,
+    subjectType?: "PROPERTY" | "ASSET",
+    propertyId?: string,
+    assetId?: string,
+  ) {
+    const params = new URLSearchParams();
+    if (eventId) params.append("event_key", eventId);
+    if (subjectType) params.append("subject_type", subjectType);
+    if (propertyId) params.append("property_id", propertyId);
+    if (assetId) params.append("asset_id", assetId);
+    return this.get<{ items: FloodExposureAssessment[] }>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/flood-exposure-assessments?${params.toString()}`,
     );
   }
   tileTemplate(tenantId: string, productId: string) {

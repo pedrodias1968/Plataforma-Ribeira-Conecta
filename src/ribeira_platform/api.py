@@ -1829,6 +1829,25 @@ def create_app(
             )
         )
 
+    @app.get("/v1/tenants/{tenant_id}/flood-exposure-assessments", tags=["flood-events"])
+    async def list_flood_exposure_assessments(
+        tenant_id: str,
+        event_key: str | None = None,
+        subject_type: str | None = None,
+        property_id: str | None = None,
+        asset_id: str | None = None,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "property:read", tenant_id)
+        assessments = application.list_flood_exposure_assessments(
+            tenant_id,
+            event_key=event_key,
+            subject_type=subject_type,
+            property_id=property_id,
+            asset_id=asset_id,
+        )
+        return {"items": assessments}
+
     @app.post("/v1/tenants/{tenant_id}/customers", status_code=201, tags=["commercial"])
     async def create_customer(
         tenant_id: str, payload: CustomerRequest, ctx: AuthContext = Depends(context)
