@@ -242,10 +242,12 @@ export class Farm360Api {
     tenantId: string,
     propertyId: string,
     productId: string,
+    fieldId?: string,
   ) {
-    return this.post<TemporalDeltaEvaluation>(
-      `/v1/tenants/${encodeURIComponent(tenantId)}/properties/${encodeURIComponent(propertyId)}/temporal-deltas/${encodeURIComponent(productId)}/evaluate`,
-    );
+    const path = fieldId
+      ? `/v1/tenants/${encodeURIComponent(tenantId)}/fields/${encodeURIComponent(fieldId)}/temporal-deltas/${encodeURIComponent(productId)}/evaluate`
+      : `/v1/tenants/${encodeURIComponent(tenantId)}/properties/${encodeURIComponent(propertyId)}/temporal-deltas/${encodeURIComponent(productId)}/evaluate`;
+    return this.post<TemporalDeltaEvaluation>(path);
   }
   provenance(tenantId: string, productId: string) {
     return this.get<Provenance>(

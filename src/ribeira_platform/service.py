@@ -173,6 +173,88 @@ class RibeiraApplication:
                 else None,
             )
 
+    def evaluate_field_temporal_delta(
+        self,
+        tenant_id: str,
+        field_id: str,
+        product_id: str,
+        actor: str = "system",
+        platform_admin: bool = False,
+    ) -> DecisionResult:
+        """Evaluate temporal delta in the context of an explicit field/talhão.
+        This enables field-scoped rule evaluation for NDVI_DELTA products.
+        """
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            field = self.fields.repository.get(tenant_id, field_id)
+            if field is None:
+                raise LookupError("field context not found in tenant")
+            property_item = self.store.get_property(tenant_id, field.property_id)
+            if property_item is None:
+                raise LookupError("field property is unavailable in tenant")
+            product = self.geospatial.repository.get_derived_product(
+                tenant_id, product_id
+            )
+            if product is None:
+                raise LookupError("derived product not found in tenant")
+            if product.property_id != field.property_id:
+                raise ValueError("derived product does not belong to field property")
+            if product.product_type != "NDVI_DELTA":
+                raise ValueError("derived product must be NDVI_DELTA")
+            dependencies = self.geospatial.repository.list_product_dependencies(
+                tenant_id, product.id
+            )
+            dependency_ids = {
+                dependency.relationship: dependency.upstream_product_id
+                for dependency in dependencies
+            }
+            baseline = self.geospatial.repository.get_derived_product(
+                tenant_id, dependency_ids.get("BASELINE_NDVI", "")
+            )
+            target = self.geospatial.repository.get_derived_product(
+                tenant_id, dependency_ids.get("TARGET_NDVI", "")
+            )
+            provenance_valid = (
+                baseline is not None
+                and target is not None
+                and baseline.property_id == field.property_id
+                and target.property_id == field.property_id
+                and self.geospatial._has_valid_temporal_delta_provenance(
+                    product, baseline, target
+                )
+            )
+            field_snapshot = self.fields.repository.get_snapshot(
+                tenant_id,
+                field.property_id,
+                field.id,
+                field.boundary_version,
+                field.boundary_checksum,
+            )
+            field_provenance_valid = field_snapshot is not None and self.geospatial._has_valid_field_delta_provenance(
+                product, field_snapshot
+            )
+            provenance_valid = provenance_valid and field_provenance_valid
+            evidence = self.store.evidence_for_reference(tenant_id, product.id)
+            provenance_valid = (
+                provenance_valid
+                and evidence is not None
+                and evidence.evidence_type == "DERIVED_PRODUCT"
+                and evidence.classification == DataClassification.DERIVED
+            )
+            return self.decisions.evaluate_temporal_delta(
+                tenant_id,
+                property_item,
+                product.id,
+                float(product.statistics.mean)
+                if product.statistics.mean is not None
+                else None,
+                evidence.id if evidence is not None else None,
+                provenance_valid,
+                actor,
+                field.id if field_provenance_valid else None,
+                field.boundary_version if field_provenance_valid else None,
+                field.boundary_checksum if field_provenance_valid else None,
+            )
+
     def create_tenant(
         self, name: str, *, tenant_id: str | None = None, actor: str = "system"
     ) -> Tenant:

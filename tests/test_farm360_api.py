@@ -27,6 +27,7 @@ from ribeira_platform.geospatial import (
 from ribeira_platform.geospatial_service import GeospatialApplication
 from ribeira_platform.iam import AuthContext, DevelopmentIdentityProvider
 from ribeira_platform.object_storage import LocalObjectStorage
+from ribeira_platform.geospatial import DerivedProduct, NdviStatistics, GeospatialQuality
 from ribeira_platform.models import Evidence, RuleDefinition, new_id
 from ribeira_platform.service import RibeiraApplication
 from ribeira_platform.storage import SQLiteStore
@@ -1015,6 +1016,50 @@ class Farm360ApiTests(unittest.TestCase):
         )
         self.assertEqual(denied.status_code, 403)
 
+    def test_evaluate_field_temporal_delta_endpoint_returns_404_for_missing_field(self) -> None:
+        evaluation_path = (
+            f"/v1/tenants/{self.tenant.id}/fields/non-existent-field"
+            f"/temporal-deltas/non-existent-product/evaluate"
+        )
+        evaluation = self.client.post(
+            evaluation_path,
+            headers={"Authorization": "Bearer admin"},
+        )
+        self.assertEqual(evaluation.status_code, 404)
+
+    def test_evaluate_field_temporal_delta_endpoint_returns_404_for_missing_product(self) -> None:
+        field = self.application.fields.create(
+            self.tenant.id,
+            property_id=self.property.id,
+            name="Talhão para avaliação temporal",
+            status="ACTIVE",
+            geometry_geojson={
+                "type": "Polygon",
+                "coordinates": [
+                    [
+                        [0.1, 0.1],
+                        [0.1, 0.4],
+                        [0.4, 0.4],
+                        [0.4, 0.1],
+                        [0.1, 0.1],
+                    ]
+                ],
+            },
+            geometry_crs="EPSG:4326",
+            source_reference="synthetic_test_data field walk",
+            observed_at="2026-09-24T12:00:00+00:00",
+            classification=DataClassification.MANUAL_CONFIRMED,
+            actor="operator",
+        )
+        evaluation_path = (
+            f"/v1/tenants/{self.tenant.id}/fields/{field.id}"
+            f"/temporal-deltas/non-existent-product/evaluate"
+        )
+        evaluation = self.client.post(
+            evaluation_path,
+            headers={"Authorization": "Bearer admin"},
+        )
+        self.assertEqual(evaluation.status_code, 404)
 
 if __name__ == "__main__":
     unittest.main()

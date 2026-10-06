@@ -128,6 +128,58 @@ class VerticalSliceTests(unittest.TestCase):
             result.decision.subject_field_boundary_checksum, field.boundary_checksum
         )
 
+    def test_evaluate_field_temporal_delta_returns_404_for_missing_field(self) -> None:
+        field = self.app.fields.create(
+            self.tenant.id,
+            property_id=self.property.id,
+            name="Talhão para delta temporal",
+            status="ACTIVE",
+            geometry_geojson={
+                "type": "Polygon",
+                "coordinates": [
+                    [
+                        [-47.01, -24.01],
+                        [-47.01, -24.02],
+                        [-47.02, -24.02],
+                        [-47.02, -24.01],
+                        [-47.01, -24.01],
+                    ]
+                ],
+            },
+            geometry_crs="EPSG:4326",
+            source_reference="synthetic_test_data field walk",
+            observed_at="2026-09-24T12:00:00+00:00",
+            classification=DataClassification.MANUAL_CONFIRMED,
+            actor="operator",
+        )
+        self.app.create_rule(
+            RuleDefinition(
+                id=new_id(),
+                tenant_id=self.tenant.id,
+                version=1,
+                name="Field-specific temporal delta threshold",
+                authority=RuleAuthority.REGRA_AGRONOMICA,
+                metric="ndvi_temporal_delta_mean",
+                operator="<",
+                threshold=-0.1,
+                unit="index",
+                severity="HIGH",
+                status="ACTIVE",
+                approved_by="agronomist-test",
+                valid_from="2026-09-16T00:00:00+00:00",
+                scope_type="FIELD",
+                scope_field_id=field.id,
+            )
+        )
+        with self.assertRaises(LookupError) as context:
+            self.app.evaluate_field_temporal_delta(
+                self.tenant.id,
+                "non-existent-field-id",
+                "synthetic-derived-product",
+                "operator",
+            )
+        self.assertIn("field context not found", str(context.exception))
+
     def activate_rule(
         self, metric: str = "soil_moisture", threshold: float = 30.0
     ) -> None:

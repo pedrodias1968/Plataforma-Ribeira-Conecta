@@ -136,6 +136,7 @@ export function TemporalPanel(props: Props) {
         props.tenantId,
         props.propertyId,
         productId,
+        props.comparisonFieldId || undefined,
       );
       if (result.decision.status === "ACTIONABLE") {
         setMessage("Regra acionada. A decisão e a inspeção recomendada foram registradas.");

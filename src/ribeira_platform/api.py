@@ -2653,6 +2653,28 @@ def create_app(
             )
         )
 
+    @app.post(
+        "/v1/tenants/{tenant_id}/fields/{field_id}/temporal-deltas/{product_id}/evaluate",
+        tags=["geospatial", "decisions", "fields"],
+    )
+    async def evaluate_field_temporal_delta(
+        tenant_id: str,
+        field_id: str,
+        product_id: str,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "property:read", tenant_id)
+        authorize(ctx, "decision:evaluate", tenant_id)
+        return to_jsonable(
+            application.evaluate_field_temporal_delta(
+                tenant_id,
+                field_id,
+                product_id,
+                ctx.subject,
+                ctx.is_platform_admin,
+            )
+        )
+
     @app.get(
         "/v1/tenants/{tenant_id}/processing-jobs/{job_id}",
         tags=["geospatial"],
