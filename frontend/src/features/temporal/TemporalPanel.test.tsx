@@ -89,7 +89,7 @@ describe("TemporalPanel", () => {
     render(<TemporalPanel {...common} api={{ evaluateTemporalDelta } as unknown as Farm360Api} mode="compare" comparison={comparison} canEvaluate onDecisionChanged={onDecisionChanged} />);
     fireEvent.click(screen.getByRole("button", { name: "Avaliar delta com regras" }));
     expect(await screen.findByText(/Regra acionada/)).toBeInTheDocument();
-    expect(evaluateTemporalDelta).toHaveBeenCalledWith("tenant", "property", "delta-product");
+    expect(evaluateTemporalDelta).toHaveBeenCalledWith("tenant", "property", "delta-product", undefined);
     expect(onDecisionChanged).toHaveBeenCalled();
   });
 
