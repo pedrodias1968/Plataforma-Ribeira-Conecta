@@ -27,7 +27,6 @@ from ribeira_platform.geospatial import (
 from ribeira_platform.geospatial_service import GeospatialApplication
 from ribeira_platform.iam import AuthContext, DevelopmentIdentityProvider
 from ribeira_platform.object_storage import LocalObjectStorage
-from ribeira_platform.geospatial import DerivedProduct, NdviStatistics, GeospatialQuality
 from ribeira_platform.models import Evidence, RuleDefinition, new_id
 from ribeira_platform.service import RibeiraApplication
 from ribeira_platform.storage import SQLiteStore

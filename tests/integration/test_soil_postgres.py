@@ -156,7 +156,7 @@ class SoilPostgresTests(unittest.TestCase):
             classification=DataClassification.MANUAL_CONFIRMED,
             actor="agronomist@test.local",
         )
-        sample_field_a = self.application.register_soil_sample_point(
+        self.application.register_soil_sample_point(
             tenant_a.id,
             prop_a.id,
             sample_code="SOLO-FIELD-A",
@@ -170,7 +170,7 @@ class SoilPostgresTests(unittest.TestCase):
             field_id=field_a.id,
             actor="agronomist@test.local",
         )
-        sample_field_b = self.application.register_soil_sample_point(
+        self.application.register_soil_sample_point(
             tenant_a.id,
             prop_a.id,
             sample_code="SOLO-FIELD-B",
@@ -225,7 +225,7 @@ class SoilPostgresTests(unittest.TestCase):
             field_id=field_a.id,
             actor="agronomist@test.local",
         )
-        analysis_a = self.application.register_soil_lab_analysis(
+        self.application.register_soil_lab_analysis(
             tenant_a.id,
             sample_a.id,
             ph_water=5.6,
@@ -305,7 +305,7 @@ class SoilPostgresTests(unittest.TestCase):
             classification=DataClassification.MANUAL_CONFIRMED,
             actor="agronomist@test.local",
         )
-        sample_a = self.application.register_soil_sample_point(
+        self.application.register_soil_sample_point(
             tenant_a.id,
             prop_a.id,
             sample_code="SOLO-PROP-A",
@@ -319,7 +319,7 @@ class SoilPostgresTests(unittest.TestCase):
             field_id=field_a.id,
             actor="agronomist@test.local",
         )
-        sample_b = self.application.register_soil_sample_point(
+        self.application.register_soil_sample_point(
             tenant_a.id,
             prop_b.id,
             sample_code="SOLO-PROP-B",
