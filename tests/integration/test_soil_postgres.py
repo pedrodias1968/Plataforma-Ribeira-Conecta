@@ -121,10 +121,14 @@ class SoilPostgresTests(unittest.TestCase):
         self.assertAlmostEqual(analysis_a.base_saturation_percent or 0, 78.82, places=2)
 
         # 4. RLS isolation: Tenant B cannot see Tenant A's sample points or lab analyses
-        samples_tenant_b = self.application.soil.list_sample_points(tenant_b.id, prop_a.id)
+        samples_tenant_b = self.application.soil.list_sample_points(
+            tenant_b.id, prop_a.id
+        )
         self.assertEqual(len(samples_tenant_b), 0)
 
-        analyses_tenant_b = self.application.soil.list_lab_analyses(tenant_b.id, sample_a.id)
+        analyses_tenant_b = self.application.soil.list_lab_analyses(
+            tenant_b.id, sample_a.id
+        )
         self.assertEqual(len(analyses_tenant_b), 0)
 
     def test_field_scoped_sample_point_queries(self) -> None:
@@ -184,8 +188,12 @@ class SoilPostgresTests(unittest.TestCase):
             field_id=field_b.id,
             actor="agronomist@test.local",
         )
-        samples_by_field_a = self.application.soil.list_sample_points(tenant_a.id, prop_a.id, field_id=field_a.id)
-        samples_by_field_b = self.application.soil.list_sample_points(tenant_a.id, prop_a.id, field_id=field_b.id)
+        samples_by_field_a = self.application.soil.list_sample_points(
+            tenant_a.id, prop_a.id, field_id=field_a.id
+        )
+        samples_by_field_b = self.application.soil.list_sample_points(
+            tenant_a.id, prop_a.id, field_id=field_b.id
+        )
         self.assertEqual(len(samples_by_field_a), 1)
         self.assertEqual(samples_by_field_a[0].sample_code, "SOLO-FIELD-A")
         self.assertEqual(len(samples_by_field_b), 1)
@@ -239,13 +247,18 @@ class SoilPostgresTests(unittest.TestCase):
             ctc_ph7=10.0,
             ctc_ph7_1=8.2,
             v_percent=78.0,
-            summary={"aluminum_saturation_percent": 22.0, "base_saturation_percent": 78.0},
+            summary={
+                "aluminum_saturation_percent": 22.0,
+                "base_saturation_percent": 78.0,
+            },
             analysis_date="2026-09-25T14:00:00+00:00",
             laboratory="Lab Teste S.A.",
             analysis_method="EMBRAPA",
             actor="lab@test.local",
         )
-        analyses_tenant_b = self.application.soil.list_lab_analyses(tenant_b.id, sample_a.id)
+        analyses_tenant_b = self.application.soil.list_lab_analyses(
+            tenant_b.id, sample_a.id
+        )
         self.assertEqual(len(analyses_tenant_b), 0)
         with self.assertRaises(SoilValidationError):
             self.application.register_soil_lab_analysis(
@@ -262,7 +275,10 @@ class SoilPostgresTests(unittest.TestCase):
                 ctc_ph7=10.0,
                 ctc_ph7_1=8.0,
                 v_percent=80.0,
-                summary={"aluminum_saturation_percent": 20.0, "base_saturation_percent": 80.0},
+                summary={
+                    "aluminum_saturation_percent": 20.0,
+                    "base_saturation_percent": 80.0,
+                },
                 analysis_date="2026-09-26T14:00:00+00:00",
                 laboratory="Lab Teste S.A.",
                 analysis_method="EMBRAPA",
@@ -333,8 +349,12 @@ class SoilPostgresTests(unittest.TestCase):
             field_id=field_b.id,
             actor="agronomist@test.local",
         )
-        samples_prop_a = self.application.soil.list_sample_points(tenant_a.id, prop_a.id)
-        samples_prop_b = self.application.soil.list_sample_points(tenant_a.id, prop_b.id)
+        samples_prop_a = self.application.soil.list_sample_points(
+            tenant_a.id, prop_a.id
+        )
+        samples_prop_b = self.application.soil.list_sample_points(
+            tenant_a.id, prop_b.id
+        )
         self.assertEqual(len(samples_prop_a), 1)
         self.assertEqual(samples_prop_a[0].sample_code, "SOLO-PROP-A")
         self.assertEqual(len(samples_prop_b), 1)
@@ -372,7 +392,10 @@ class SoilPostgresTests(unittest.TestCase):
                 depth_bottom_cm=20.0,
                 collection_date="2026-09-21T09:00:00+00:00",
                 collector_name="Agrônomo A",
-                location_geojson={"type": "InvalidType", "coordinates": [-47.49, -24.51]},
+                location_geojson={
+                    "type": "InvalidType",
+                    "coordinates": [-47.49, -24.51],
+                },
                 classification=DataClassification.MANUAL_CONFIRMED,
                 source_reference="GPS_PRO",
                 actor="agronomist@test.local",

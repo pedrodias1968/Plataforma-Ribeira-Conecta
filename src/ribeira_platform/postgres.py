@@ -1251,7 +1251,9 @@ class PostgresStore:
         for row in rows:
             record = dict(row)
             if record["property_geometry"]:
-                record["property_geometry_geojson"] = json.loads(record["property_geometry"])
+                record["property_geometry_geojson"] = json.loads(
+                    record["property_geometry"]
+                )
             if record["asset_geometry"]:
                 record["asset_geometry_geojson"] = json.loads(record["asset_geometry"])
             record["limitations"] = json.loads(record["limitations"])

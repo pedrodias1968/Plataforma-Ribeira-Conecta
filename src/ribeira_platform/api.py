@@ -1548,7 +1548,10 @@ def create_app(
     ):
         authorize(ctx, "soil:read", tenant_id)
         items = application.list_soil_sample_points(
-            tenant_id, property_id, field_id=field_id, platform_admin=ctx.is_platform_admin
+            tenant_id,
+            property_id,
+            field_id=field_id,
+            platform_admin=ctx.is_platform_admin,
         )
         return {
             "property_id": property_id,
@@ -1829,7 +1832,9 @@ def create_app(
             )
         )
 
-    @app.get("/v1/tenants/{tenant_id}/flood-exposure-assessments", tags=["flood-events"])
+    @app.get(
+        "/v1/tenants/{tenant_id}/flood-exposure-assessments", tags=["flood-events"]
+    )
     async def list_flood_exposure_assessments(
         tenant_id: str,
         event_key: str | None = None,

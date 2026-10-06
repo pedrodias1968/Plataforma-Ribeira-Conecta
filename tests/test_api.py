@@ -67,7 +67,9 @@ class ApiSecurityTests(unittest.TestCase):
 
     def test_property_evaluation_requires_property_read_permission(self) -> None:
         tenant = self.application.create_tenant("Evaluation permission tenant")
-        property_item = self.application.create_property(tenant.id, "Restricted property")
+        property_item = self.application.create_property(
+            tenant.id, "Restricted property"
+        )
         client = TestClient(
             create_app(
                 self.application,

@@ -87,7 +87,9 @@ class SoilUnitTest(unittest.TestCase):
         validate_soil_sample_point(outside_field_point, PROPERTY_GEOJSON)
 
         with self.assertRaises(SoilValidationError):
-            validate_soil_sample_point(outside_field_point, PROPERTY_GEOJSON, FIELD_GEOJSON)
+            validate_soil_sample_point(
+                outside_field_point, PROPERTY_GEOJSON, FIELD_GEOJSON
+            )
 
         outside_prop_point = {"type": "Point", "coordinates": [-47.1, -24.5]}
         with self.assertRaises(SoilValidationError):
@@ -155,7 +157,9 @@ class SoilUnitTest(unittest.TestCase):
             actor="agronomist@test.local",
         )
         self.assertEqual(analysis.report_number, "LAUDO-2026-9812")
-        self.assertAlmostEqual(analysis.cation_exchange_capacity_cec or 0, 7.0, places=2)
+        self.assertAlmostEqual(
+            analysis.cation_exchange_capacity_cec or 0, 7.0, places=2
+        )
         self.assertAlmostEqual(analysis.base_saturation_percent or 0, 65.71, places=2)
 
         analyses = self.app.list_soil_lab_analyses(self.tenant.id, sample.id)
@@ -168,7 +172,9 @@ class SoilUnitTest(unittest.TestCase):
                 self.app,
                 DevelopmentIdentityProvider(
                     "admin-token",
-                    AuthContext("admin-user", self.tenant.id, roles=frozenset({"TENANT_ADMIN"})),
+                    AuthContext(
+                        "admin-user", self.tenant.id, roles=frozenset({"TENANT_ADMIN"})
+                    ),
                 ),
             )
         )
@@ -177,7 +183,9 @@ class SoilUnitTest(unittest.TestCase):
                 self.app,
                 DevelopmentIdentityProvider(
                     "operator-token",
-                    AuthContext("operator-user", self.tenant.id, roles=frozenset({"OPERATOR"})),
+                    AuthContext(
+                        "operator-user", self.tenant.id, roles=frozenset({"OPERATOR"})
+                    ),
                 ),
             )
         )
@@ -186,7 +194,9 @@ class SoilUnitTest(unittest.TestCase):
                 self.app,
                 DevelopmentIdentityProvider(
                     "viewer-token",
-                    AuthContext("viewer-user", self.tenant.id, roles=frozenset({"VIEWER"})),
+                    AuthContext(
+                        "viewer-user", self.tenant.id, roles=frozenset({"VIEWER"})
+                    ),
                 ),
             )
         )

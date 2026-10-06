@@ -229,8 +229,11 @@ class RibeiraApplication:
                 field.boundary_version,
                 field.boundary_checksum,
             )
-            field_provenance_valid = field_snapshot is not None and self.geospatial._has_valid_field_delta_provenance(
-                product, field_snapshot
+            field_provenance_valid = (
+                field_snapshot is not None
+                and self.geospatial._has_valid_field_delta_provenance(
+                    product, field_snapshot
+                )
             )
             provenance_valid = provenance_valid and field_provenance_valid
             evidence = self.store.evidence_for_reference(tenant_id, product.id)

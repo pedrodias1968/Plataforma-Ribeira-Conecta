@@ -243,9 +243,7 @@ class SoilRepository:
         p = self.placeholder
         location_column = "location" if self.postgres else "location_geojson"
         location_value = (
-            f"ST_SetSRID(ST_GeomFromGeoJSON({p}::text), 4326)"
-            if self.postgres
-            else p
+            f"ST_SetSRID(ST_GeomFromGeoJSON({p}::text), 4326)" if self.postgres else p
         )
         location_param = json.dumps(item.location_geojson)
 
@@ -388,23 +386,27 @@ class SoilRepository:
         return [self._hydrate_lab_analysis(row) for row in cursor.fetchall()]
 
     def _hydrate_sample_point(self, row: Any) -> SoilSamplePoint:
-        data = dict(row) if hasattr(row, "keys") else {
-            "id": row[0],
-            "tenant_id": row[1],
-            "property_id": row[2],
-            "field_id": row[3],
-            "sample_code": row[4],
-            "depth_top_cm": float(row[5]),
-            "depth_bottom_cm": float(row[6]),
-            "collection_date": str(row[7]),
-            "collector_name": row[8],
-            "location_geojson": row[9],
-            "location_crs": row[10],
-            "classification": row[11],
-            "source_reference": row[12],
-            "status": row[13],
-            "created_at": str(row[14]),
-        }
+        data = (
+            dict(row)
+            if hasattr(row, "keys")
+            else {
+                "id": row[0],
+                "tenant_id": row[1],
+                "property_id": row[2],
+                "field_id": row[3],
+                "sample_code": row[4],
+                "depth_top_cm": float(row[5]),
+                "depth_bottom_cm": float(row[6]),
+                "collection_date": str(row[7]),
+                "collector_name": row[8],
+                "location_geojson": row[9],
+                "location_crs": row[10],
+                "classification": row[11],
+                "source_reference": row[12],
+                "status": row[13],
+                "created_at": str(row[14]),
+            }
+        )
         loc = data["location_geojson"]
         if isinstance(loc, str):
             loc = json.loads(loc)
@@ -427,31 +429,35 @@ class SoilRepository:
         )
 
     def _hydrate_lab_analysis(self, row: Any) -> SoilLabAnalysis:
-        data = dict(row) if hasattr(row, "keys") else {
-            "id": row[0],
-            "tenant_id": row[1],
-            "sample_point_id": row[2],
-            "lab_name": row[3],
-            "report_number": row[4],
-            "report_date": str(row[5]),
-            "ph_h2o": row[6],
-            "ph_cacl2": row[7],
-            "organic_matter_g_dm3": row[8],
-            "phosphorus_mg_dm3": row[9],
-            "potassium_cmolc_dm3": row[10],
-            "calcium_cmolc_dm3": row[11],
-            "magnesium_cmolc_dm3": row[12],
-            "aluminum_cmolc_dm3": row[13],
-            "potential_acidity_h_al": row[14],
-            "cation_exchange_capacity_cec": row[15],
-            "base_saturation_percent": row[16],
-            "clay_percent": row[17],
-            "silt_percent": row[18],
-            "sand_percent": row[19],
-            "raw_attributes": row[20],
-            "classification": row[21],
-            "created_at": str(row[22]),
-        }
+        data = (
+            dict(row)
+            if hasattr(row, "keys")
+            else {
+                "id": row[0],
+                "tenant_id": row[1],
+                "sample_point_id": row[2],
+                "lab_name": row[3],
+                "report_number": row[4],
+                "report_date": str(row[5]),
+                "ph_h2o": row[6],
+                "ph_cacl2": row[7],
+                "organic_matter_g_dm3": row[8],
+                "phosphorus_mg_dm3": row[9],
+                "potassium_cmolc_dm3": row[10],
+                "calcium_cmolc_dm3": row[11],
+                "magnesium_cmolc_dm3": row[12],
+                "aluminum_cmolc_dm3": row[13],
+                "potential_acidity_h_al": row[14],
+                "cation_exchange_capacity_cec": row[15],
+                "base_saturation_percent": row[16],
+                "clay_percent": row[17],
+                "silt_percent": row[18],
+                "sand_percent": row[19],
+                "raw_attributes": row[20],
+                "classification": row[21],
+                "created_at": str(row[22]),
+            }
+        )
         raw = data["raw_attributes"]
         if isinstance(raw, str):
             raw = json.loads(raw)
@@ -464,18 +470,42 @@ class SoilRepository:
             report_date=self._timestamp(data["report_date"]),
             ph_h2o=float(data["ph_h2o"]) if data["ph_h2o"] is not None else None,
             ph_cacl2=float(data["ph_cacl2"]) if data["ph_cacl2"] is not None else None,
-            organic_matter_g_dm3=float(data["organic_matter_g_dm3"]) if data["organic_matter_g_dm3"] is not None else None,
-            phosphorus_mg_dm3=float(data["phosphorus_mg_dm3"]) if data["phosphorus_mg_dm3"] is not None else None,
-            potassium_cmolc_dm3=float(data["potassium_cmolc_dm3"]) if data["potassium_cmolc_dm3"] is not None else None,
-            calcium_cmolc_dm3=float(data["calcium_cmolc_dm3"]) if data["calcium_cmolc_dm3"] is not None else None,
-            magnesium_cmolc_dm3=float(data["magnesium_cmolc_dm3"]) if data["magnesium_cmolc_dm3"] is not None else None,
-            aluminum_cmolc_dm3=float(data["aluminum_cmolc_dm3"]) if data["aluminum_cmolc_dm3"] is not None else None,
-            potential_acidity_h_al=float(data["potential_acidity_h_al"]) if data["potential_acidity_h_al"] is not None else None,
-            cation_exchange_capacity_cec=float(data["cation_exchange_capacity_cec"]) if data["cation_exchange_capacity_cec"] is not None else None,
-            base_saturation_percent=float(data["base_saturation_percent"]) if data["base_saturation_percent"] is not None else None,
-            clay_percent=float(data["clay_percent"]) if data["clay_percent"] is not None else None,
-            silt_percent=float(data["silt_percent"]) if data["silt_percent"] is not None else None,
-            sand_percent=float(data["sand_percent"]) if data["sand_percent"] is not None else None,
+            organic_matter_g_dm3=float(data["organic_matter_g_dm3"])
+            if data["organic_matter_g_dm3"] is not None
+            else None,
+            phosphorus_mg_dm3=float(data["phosphorus_mg_dm3"])
+            if data["phosphorus_mg_dm3"] is not None
+            else None,
+            potassium_cmolc_dm3=float(data["potassium_cmolc_dm3"])
+            if data["potassium_cmolc_dm3"] is not None
+            else None,
+            calcium_cmolc_dm3=float(data["calcium_cmolc_dm3"])
+            if data["calcium_cmolc_dm3"] is not None
+            else None,
+            magnesium_cmolc_dm3=float(data["magnesium_cmolc_dm3"])
+            if data["magnesium_cmolc_dm3"] is not None
+            else None,
+            aluminum_cmolc_dm3=float(data["aluminum_cmolc_dm3"])
+            if data["aluminum_cmolc_dm3"] is not None
+            else None,
+            potential_acidity_h_al=float(data["potential_acidity_h_al"])
+            if data["potential_acidity_h_al"] is not None
+            else None,
+            cation_exchange_capacity_cec=float(data["cation_exchange_capacity_cec"])
+            if data["cation_exchange_capacity_cec"] is not None
+            else None,
+            base_saturation_percent=float(data["base_saturation_percent"])
+            if data["base_saturation_percent"] is not None
+            else None,
+            clay_percent=float(data["clay_percent"])
+            if data["clay_percent"] is not None
+            else None,
+            silt_percent=float(data["silt_percent"])
+            if data["silt_percent"] is not None
+            else None,
+            sand_percent=float(data["sand_percent"])
+            if data["sand_percent"] is not None
+            else None,
             raw_attributes=raw or {},
             classification=DataClassification(data["classification"]),
             created_at=self._timestamp(data["created_at"]),

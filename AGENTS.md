@@ -88,7 +88,7 @@ Default priority order:
 6. evidence/provenance
 7. shared architectural foundations
 8. customer-facing functionality
-9. flood intelligence
+9. flood intelligence and official hydrology integrations
 10. geospatial and Digital Twin capabilities
 11. agriculture and soil intelligence
 12. integrations and telemetry
@@ -140,6 +140,11 @@ docs/pilot/
 docs/business/
 docs/commercial/
 ```
+
+For any work involving Flood, Environment, Hydrology or Farm360 hydrological
+context, Section 42 of this file is mandatory and the repository should also
+preserve/update the canonical hydrology integration document under
+`docs/integrations/` when present.
 
 Do not create a new canonical document when an existing canonical document
 already owns the subject.
@@ -291,20 +296,47 @@ evidence.
 
 Causal hypotheses require explicit evidence states.
 
-Existing provider restrictions remain authoritative.
+Provider restrictions are source-specific and must remain authoritative.
 
-In particular:
+Do not conflate SAISP with the SP Águas SIBH public API. They are distinct
+integration paths with different authorization states.
+
+Current hydrology states are:
 
 ```text
 SAISP automation:
 NOT_APPROVED_FOR_AUTOMATION
-fail closed
+FAIL_CLOSED
 
-ANA:
-AUTH_REQUIRED_PENDING_PROVIDER
+SP ÁGUAS SIBH:
+STATUS=OFFICIAL_PUBLIC_API_AVAILABLE
+AUTH=NONE
+AUTOMATION=RECOMMENDED_BY_PROVIDER
+
+ANA HIDROWEBSERVICE:
+STATUS=ACCESS_APPROVED
+AUTH=REQUIRED
+AUTH_ROUTE=/EstacoesTelemetricas/OAUth/v1
+AUTH_HEADERS=Identificador,Senha
+AUTH_SCHEME=Bearer
+DECLARED_TOKEN_TTL=60_MINUTES
+TOKEN_REUSE=REQUIRED
+HIGH_FREQUENCY_REAUTH=FORBIDDEN
+BASE_URL=https://www.ana.gov.br/hidrowebservice/EstacoesTelemetricas
+AUTOMATION=SUPPORTED
+SECRETS=PROTECTED_RUNTIME_CONFIG_ONLY
+OFFICIAL_MANUAL_VERSION=20.02.2026
 ```
 
 Do not silently bypass these restrictions.
+
+For Flood, Environment, Hydrology or Farm360 hydrological context work, the
+official integration rules in Section 42 are mandatory.
+
+When implementing ANA integration, the official HidroWebService manual version
+20.02.2026 and the current ANA Swagger are provider-contract references. If they
+conflict, preserve the discrepancy, validate the live contract safely, and
+document the observed behavior instead of guessing.
 
 ---
 
@@ -683,87 +715,6 @@ inside source code or browser bundles.
 
 ---
 
-# Canonical Application URL and Production Testing
-
-The canonical public application and pilot URL for Ribeira Conecta is:
-
-https://app.ribeiraconecta.com.br
-
-This domain is the authoritative user-facing application origin unless a newer
-explicit operator decision changes it.
-
-The autonomous agent IS AUTHORIZED to test the deployed application directly
-at:
-
-https://app.ribeiraconecta.com.br
-
-Direct production/pilot validation is encouraged when it helps verify a
-deployment, integration, frontend workflow, API behavior, routing, TLS,
-Cloudflare access, smoke test or user-visible capability.
-
-Production validation may include, where applicable:
-
-- HTTP/HTTPS reachability
-- TLS availability
-- redirects
-- public frontend loading
-- static assets
-- documented health endpoints
-- documented API endpoints
-- authentication entry points
-- frontend/backend connectivity
-- CORS behavior
-- deployment smoke tests
-- user-visible navigation
-- map loading
-- geospatial views
-- non-destructive application workflows
-- post-deployment health verification
-
-Prefer testing the real deployed URL when validating behavior that can differ
-between local development and the deployed application.
-
-Production testing rules:
-
-- Do not replace the canonical domain with temporary Cloudflare Quick Tunnel
-  URLs.
-- Do not treat localhost URLs as production URLs.
-- Development and isolated tests may continue to use localhost/private origins.
-- Production-facing links, callbacks, smoke checks and deployment documentation
-  should use https://app.ribeiraconecta.com.br when the public origin is
-  required.
-- Do not hardcode the public domain deep inside application logic when runtime
-  configuration is the correct architectural mechanism.
-- Historical Quick Tunnel URLs remain obsolete.
-- Never expose credentials, tokens, cookies or private headers in logs or
-  commits.
-- Prefer read-only and non-destructive production checks.
-- Tests that create or modify data must use clearly designated test data or a
-  test tenant when available and must be safely reversible.
-- Never delete, corrupt or mutate real customer data merely to validate a
-  feature.
-- Never weaken authentication, authorization, tenant isolation, RLS or other
-  security controls to make a production test pass.
-- A local test passing does not prove production works.
-- A production smoke test passing does not replace unit, integration, security
-  or build validation.
-
-For production-facing releases, the preferred validation sequence is:
-
-1. run relevant local/unit/integration validation;
-2. build the production candidate;
-3. perform an isolated candidate smoke test when applicable;
-4. deploy/promote according to repository policy;
-5. test https://app.ribeiraconecta.com.br directly;
-6. verify critical user-visible behavior;
-7. retain or restore the known-good release if post-deployment validation
-   fails.
-
-The agent may use the canonical URL directly without requesting human approval
-for normal non-destructive validation covered by these rules.
-
----
-
 # 19. Current Operational Restrictions
 
 Do not bypass explicit operator decisions.
@@ -795,8 +746,23 @@ SAISP automation:
 NOT_APPROVED_FOR_AUTOMATION
 FAIL_CLOSED
 
-ANA:
-AUTH_REQUIRED_PENDING_PROVIDER
+SP ÁGUAS SIBH:
+OFFICIAL_PUBLIC_API_AVAILABLE
+AUTH=NONE
+AUTOMATION=RECOMMENDED_BY_PROVIDER
+
+ANA HIDROWEBSERVICE:
+ACCESS_APPROVED
+AUTH=REQUIRED
+AUTH_ROUTE=/EstacoesTelemetricas/OAUth/v1
+AUTH_SCHEME=Bearer
+DECLARED_TOKEN_TTL=60_MINUTES
+TOKEN_REUSE=REQUIRED
+HIGH_FREQUENCY_REAUTH=FORBIDDEN
+BASE_URL=https://www.ana.gov.br/hidrowebservice/EstacoesTelemetricas
+AUTOMATION=SUPPORTED
+SECRETS=PROTECTED_RUNTIME_CONFIG_ONLY
+OFFICIAL_MANUAL_VERSION=20.02.2026
 ```
 
 If canonical documentation changes one of these states, follow the newer
@@ -1334,3 +1300,1093 @@ Always preserve the canonical operational chain:
 ```text
 asset -> data -> context -> rule -> decision -> action -> result
 ```
+
+---
+
+# 42. Official Hydrology Integration — SP Águas SIBH + ANA HidroWebService
+
+This section is mandatory for autonomous work involving Hydrology, Flood,
+Environment, Farm360 hydrological context, official river/rainfall/flow data,
+or hydrological provider integration.
+
+It supersedes older assumptions that ANA access is still pending. It does NOT
+change the independent SAISP fail-closed restriction. SP Águas SIBH and SAISP
+must never be treated as the same provider/integration path.
+
+The following rules are incorporated from the approved hydrology integration
+specification and are part of this AGENTS.md contract.
+
+**Status:** PRIORIDADE ALTA  
+**Implementação:** Pendente / em andamento  
+**Princípio:** Evidence First
+
+### 1. Objetivo
+
+Integrar à Ribeira Conecta fontes hidrológicas oficiais para monitoramento contínuo do Vale do Ribeira, com foco em:
+
+- pluviometria;
+- nível de rios;
+- vazão;
+- histórico hidrológico;
+- acompanhamento em tempo real ou próximo do tempo real;
+- contexto para risco de inundação;
+- integração com Farm360, Flood/Environment, regras, alertas e relatórios.
+
+A arquitetura deve ser provider-neutral e preservar integralmente a proveniência dos dados.
+
+A ausência de dados nunca deve ser substituída por estimativa não identificada.
+
+### 2. SP Águas — SIBH
+
+A SP Águas confirmou oficialmente a existência de API pública para consulta dos dados disponibilizados no Sistema Integrado de Bacias Hidrográficas — SIBH.
+
+#### 2.1 Endpoints oficiais
+
+Estações:
+
+```text
+https://apps.spaguas.sp.gov.br/sibh/api/v2/stations
+```
+
+Medições:
+
+```text
+https://apps.spaguas.sp.gov.br/sibh/api/v2/measurements
+```
+
+#### 2.2 Parâmetros informados pela SP Águas
+
+```text
+start_date
+end_date
+group_type
+station_prefixes_ids
+format
+```
+
+`group_type`:
+
+```text
+minute
+hour
+day
+month
+```
+
+`format`:
+
+```text
+json
+csv
+```
+
+#### 2.3 Tipos de dados
+
+Conforme estação e disponibilidade:
+
+- pluviometria / chuva;
+- fluviometria / nível;
+- vazão.
+
+#### 2.4 Autenticação
+
+Segundo resposta oficial recebida da SP Águas, atualmente a API é pública e não exige usuário, senha, token ou credenciamento prévio.
+
+#### 2.5 Uso automatizado
+
+A SP Águas recomenda prioritariamente a utilização dos endpoints do SIBH para integração e obtenção periódica dos dados.
+
+Consultas automatizadas devem ser realizadas de maneira responsável, evitando volume excessivo de requisições e polling desnecessariamente curto.
+
+A Ribeira Conecta deve determinar a cadência real das estações antes de definir a frequência final de ingestão.
+
+### 3. Validação obrigatória dos parâmetros de data
+
+A resposta recebida da SP Águas descreveu:
+
+```text
+start_date - fim da série
+end_date - começo da série
+```
+
+Essa descrição parece semanticamente invertida.
+
+A implementação NÃO deve corrigir, inverter ou assumir comportamento sem validação.
+
+Antes de definir o contrato canônico do adapter, testar empiricamente:
+
+```text
+start_date < end_date
+start_date > end_date
+```
+
+Também validar:
+
+- formato aceito de data/hora;
+- timezone;
+- inclusividade de início/fim;
+- ordenação da resposta;
+- paginação;
+- limites máximos de intervalo;
+- comportamento sem dados;
+- comportamento com estação inválida;
+- comportamento com múltiplas estações;
+- diferenças entre JSON e CSV.
+
+O comportamento verificado deve ser registrado na documentação técnica e em testes de contrato.
+
+### 4. Estações do Vale do Ribeira
+
+A SP Águas forneceu arquivo CSV com IDs/códigos das estações de pluviometria e fluviometria da região do Vale do Ribeira / UGRHI 11.
+
+Quando esse arquivo estiver disponível no ambiente do projeto, ele deve ser importado por fluxo controlado e com proveniência.
+
+Nunca fabricar IDs, códigos ou nomes de estação.
+
+Persistir, quando fornecido:
+
+```text
+provider_station_id
+station_code
+station_name
+station_type
+river
+basin
+sub_basin
+latitude
+longitude
+municipality
+status
+source
+retrieved_at
+raw_metadata
+```
+
+A importação deve ser idempotente.
+
+### 5. Provider SP Águas
+
+Implementar provider separado:
+
+```text
+SPAguaSIBHProvider
+```
+
+O provider deve ficar atrás da arquitetura provider-neutral de Hydrology / Environment.
+
+Responsabilidades:
+
+- listagem de estações;
+- consulta de medições;
+- ingestão de chuva;
+- ingestão de nível;
+- ingestão de vazão;
+- normalização de unidade;
+- preservação do payload/referência original;
+- persistência;
+- histórico;
+- deduplicação;
+- idempotência;
+- atualização incremental;
+- monitoramento de freshness;
+- retry/backoff;
+- classificação de falha do provider.
+
+### 6. Modelo canônico de observação hidrológica
+
+Cada observação normalizada deve preservar no mínimo:
+
+```text
+provider
+provider_station_id
+station_id
+metric_type
+value
+unit
+observed_at
+received_at
+ingested_at
+quality
+status
+source_reference
+raw_reference
+provenance
+```
+
+Tipos mínimos de métrica:
+
+```text
+RAINFALL
+RIVER_LEVEL
+FLOW
+```
+
+Os tipos devem permanecer semanticamente distintos.
+
+Nunca inferir nível → vazão ou vazão → nível sem curva-chave, modelo ou metodologia científica explicitamente registrada e versionada.
+
+### 7. Semântica Evidence First
+
+Estados mínimos:
+
+```text
+OBSERVED
+OFFICIAL_SOURCE
+CALCULATED
+DERIVED
+UNKNOWN
+CONFLICTING
+```
+
+Sem medição:
+
+```text
+UNKNOWN
+```
+
+Fonte indisponível:
+
+```text
+SOURCE_UNAVAILABLE
+```
+
+Providers oficiais divergentes de maneira relevante:
+
+```text
+CONFLICTING
+```
+
+Nunca preencher lacunas com valor fabricado.
+
+### 8. Ingestão automática
+
+Integrar o SIBH ao scheduler e aos durable jobs existentes.
+
+Fluxo canônico:
+
+```text
+provider/station
+→ busca incremental
+→ valida resposta
+→ normaliza
+→ deduplica
+→ persiste observações
+→ atualiza freshness
+→ atualiza contexto hidrológico
+→ disponibiliza Farm360/Flood
+```
+
+Persistir por provider/estação:
+
+```text
+last_attempt_at
+last_success_at
+latest_observation_at
+next_refresh_at
+provider_error
+retry_state
+consecutive_failures
+```
+
+A frequência deve considerar cadência real da estação, frequência de transmissão, criticidade operacional e uso responsável da API.
+
+Não utilizar polling agressivo sem justificativa.
+
+### 9. Relação estação ↔ propriedade
+
+A Ribeira Conecta deve identificar quais estações são aplicáveis a uma propriedade.
+
+Não assumir automaticamente:
+
+```text
+estação mais próxima = estação representativa
+```
+
+A seleção pode considerar:
+
+- distância;
+- bacia;
+- sub-bacia;
+- rio associado;
+- montante/jusante;
+- disponibilidade da métrica;
+- freshness;
+- qualidade;
+- cobertura temporal;
+- contexto topográfico/hidrológico.
+
+Persistir:
+
+```text
+property_id
+station_id
+relationship_type
+distance
+selection_reason
+limitations
+source
+confirmed_at
+```
+
+### 10. Flood / Environment
+
+Usar observações reais para construir contexto de:
+
+- chuva;
+- nível;
+- vazão;
+- tendência temporal;
+- eventos hidrológicos;
+- exposição da propriedade;
+- exposição de ativos;
+- regras;
+- alertas;
+- ações;
+- resultados.
+
+Cadeia canônica:
+
+```text
+observação
+→ contexto
+→ regra/modelo
+→ avaliação
+→ decisão
+→ ação
+→ resultado
+```
+
+Nunca promover correlação temporal automaticamente para causalidade.
+
+### 11. ANA — HidroWebService
+
+O acesso da Ribeira Conecta ao HidroWebService foi aprovado pela ANA.
+
+A integração deve seguir o manual oficial:
+
+```text
+Tutorial de Serviço para Consumo de Dados — API HidroWebService
+Versão 20.02.2026
+```
+
+Swagger informado no manual:
+
+```text
+https://www.ana.gov.br/hidrowebservice/swagger-ui/index.html
+```
+
+Base URL usada no exemplo oficial de automação:
+
+```text
+https://www.ana.gov.br/hidrowebservice/EstacoesTelemetricas
+```
+
+Implementar provider separado:
+
+```text
+ANAHidroWebProvider
+```
+
+#### 11.1 Segurança
+
+As credenciais da ANA são privadas.
+
+Nunca:
+
+- colocar identificador, senha ou token no Git;
+- colocar senha/token na documentação;
+- colocar senha/token no AGENTS.md;
+- imprimir senha/token em logs;
+- colocar senha/token em prompt;
+- armazenar segredo no frontend;
+- incluir segredo em fixtures.
+
+Usar exclusivamente configuração protegida de runtime, por exemplo:
+
+```text
+/home/ribeira/.config/ribeira/
+```
+
+com permissões restritas.
+
+O identificador de acesso é cadastrado junto à ANA e pode corresponder ao CPF ou
+CNPJ autorizado. Não registrar o valor real do identificador neste arquivo.
+
+#### 11.2 Contrato de autenticação oficial
+
+Rota de autenticação:
+
+```text
+GET /EstacoesTelemetricas/OAUth/v1
+```
+
+O exemplo oficial envia as credenciais nos headers:
+
+```text
+Identificador: <protected-runtime-value>
+Senha: <protected-runtime-value>
+```
+
+A resposta fornece `tokenautenticacao`, que deve ser usado nas consultas:
+
+```text
+Authorization: Bearer <tokenautenticacao>
+```
+
+O texto normativo do manual declara validade de:
+
+```text
+60 minutos
+```
+
+A aplicação deve gerenciar o ciclo de vida e reutilizar o token enquanto válido.
+Não autenticar novamente antes de cada consulta/job.
+
+Autenticações em alta frequência são explicitamente desaconselhadas pela ANA e
+podem levar ao bloqueio automático do IP. Portanto:
+
+```text
+TOKEN_CACHE=REQUIRED
+TOKEN_REUSE=REQUIRED
+HIGH_FREQUENCY_REAUTH=FORBIDDEN
+REFRESH_BEFORE_EXPIRY=BOUNDED_CONFIGURABLE_MARGIN
+```
+
+Há uma inconsistência documentada que deve ser preservada: o texto principal do
+manual declara 60 minutos de validade, enquanto o exemplo Java do Anexo III
+implementa uma verificação conservadora de 15 minutos. O provider não deve
+silenciosamente redefinir o contrato para 15 minutos.
+
+Regra de implementação:
+
+- tratar 60 minutos como a validade declarada pelo manual;
+- usar margem conservadora configurável para renovação;
+- validar o comportamento real em contract tests;
+- registrar qualquer divergência observada da API;
+- nunca criar loop de reautenticação.
+
+#### 11.3 Rotas oficiais prioritárias
+
+Inventário de estações:
+
+```text
+GET /EstacoesTelemetricas/HidroInventarioEstacoes/v1
+```
+
+Série telemétrica adotada:
+
+```text
+GET /EstacoesTelemetricas/HidroinfoanaSerieTelemetricaAdotada/v1
+```
+
+O tutorial também demonstra uma rota de série telemétrica detalhada com
+nomenclatura diferente no Swagger. Como o manual apresenta mais de uma forma de
+nomear essa rota, o adapter deve validar o path real no Swagger/serviço antes de
+hardcodá-lo em produção.
+
+Não inventar rotas a partir de nomes aproximados.
+
+#### 11.4 Semântica da série telemétrica adotada
+
+O manual exemplifica os campos:
+
+```text
+Chuva_Adotada
+Chuva_Adotada_Status
+Cota_Adotada
+Cota_Adotada_Status
+Vazao_Adotada
+Vazao_Adotada_Status
+Data_Atualizacao
+Data_Hora_Medicao
+codigoestacao
+```
+
+Semântica informada:
+
+```text
+Chuva_Adotada = precipitação em mm
+Cota_Adotada = cota em cm
+Vazao_Adotada = vazão em m3/s
+*_Status: 0=ok, 1=suspeito, 2=ruim
+Data_Hora_Medicao = momento da medição/coleta
+Data_Atualizacao = atualização do dado na base ANA
+```
+
+Mapeamento para o modelo canônico, preservando sempre os campos/raw payload
+originais:
+
+```text
+Chuva_Adotada -> RAINFALL
+Cota_Adotada -> RIVER_LEVEL
+Vazao_Adotada -> FLOW
+Data_Hora_Medicao -> observed_at
+Data_Atualizacao -> provider_updated_at
+codigoestacao -> provider_station_id
+```
+
+O status de qualidade da ANA deve ser persistido. Dado `suspeito` ou `ruim` não
+deve ser silenciosamente tratado como observação de qualidade normal.
+
+#### 11.5 Inventário ANA
+
+A rota `HidroInventarioEstacoes` pode fornecer, entre outros campos:
+
+```text
+codigoestacao
+Estacao_Nome
+Latitude
+Longitude
+Municipio_Codigo
+Municipio_Nome
+Operadora_Codigo
+Operadora_Sigla
+Responsavel_Sigla
+UF_Estacao
+UF_Nome_Estacao
+codigobacia
+Operando
+Tipo_Estacao
+Altitude
+Area_Drenagem
+Bacia_Nome
+Data_Ultima_Atualizacao
+```
+
+Preservar metadados adicionais no `raw_metadata` quando não houver coluna
+canônica específica.
+
+`Operando=1` no exemplo do manual representa estação ativa, mas o adapter deve
+preservar o valor original e validar demais estados observados antes de criar
+enumeração fechada.
+
+#### 11.6 Consultas e filtros
+
+O manual exige campos obrigatórios conforme a rota, incluindo código da estação
+e data de busca em consultas de série.
+
+O exemplo de automação usa:
+
+```text
+CodigoDaEstacao=<codigo>
+TipoFiltroData=DATA_LEITURA
+RangeIntervaloDeBusca=DIAS_30
+```
+
+Esses valores demonstram o contrato do exemplo oficial, mas não autorizam a
+invenção de valores adicionais. Enumerations e limites devem ser validados no
+Swagger/serviço e cobertos por contract tests.
+
+#### 11.7 Falhas e comportamento operacional
+
+O provider ANA deve:
+
+- diferenciar falha de autenticação, autorização, validação, ausência de dados e
+  erro de servidor;
+- não converter resposta vazia em observação zero;
+- usar retry/backoff somente para falhas transitórias;
+- renovar token quando expirado ou próximo da expiração, de forma bounded;
+- nunca registrar credenciais/token em exception messages;
+- preservar histórico já ingerido quando a ANA estiver indisponível;
+- não derrubar Farm360/Flood por indisponibilidade temporária do provider;
+- manter observabilidade de `last_attempt_at`, `last_success_at`,
+  `latest_observation_at`, `provider_error` e `consecutive_failures`.
+
+#### 11.8 Contract tests obrigatórios para ANA
+
+Adicionar testes para:
+
+- autenticação com configuração protegida;
+- parsing do `tokenautenticacao`;
+- reutilização/caching de token;
+- renovação bounded antes/depois da expiração;
+- proteção contra reautenticação por request;
+- tratamento da divergência documental 60 min vs exemplo 15 min;
+- Bearer token nas consultas;
+- inventário de estações;
+- série telemétrica adotada;
+- parsing de chuva/cota/vazão;
+- unidades;
+- QC `0/1/2`;
+- timestamps de medição e atualização;
+- resposta vazia;
+- estação inválida;
+- falhas 4xx/5xx;
+- retry/backoff;
+- secret redaction em logs;
+- idempotência e deduplicação;
+- provenance;
+- tenant isolation/RLS onde o dado for associado ao contexto de tenant.
+
+Fixtures ANA só podem existir em testes e devem ser explicitamente sintéticas.
+Nunca usar exemplos do manual como dado real de produção.
+
+### 12. Providers independentes
+
+SP Águas e ANA devem permanecer providers distintos.
+
+#### SP Águas / SIBH
+
+Uso principal esperado:
+
+- operação regional;
+- Vale do Ribeira;
+- chuva;
+- nível;
+- vazão;
+- telemetria próxima do tempo real.
+
+#### ANA / HidroWebService
+
+Uso esperado:
+
+- inventário nacional;
+- séries históricas;
+- telemetria complementar;
+- redundância;
+- contexto hidrológico nacional.
+
+Uma fonte não substitui automaticamente a outra.
+
+### 13. Correlação entre providers
+
+A mesma estação física pode eventualmente aparecer em mais de uma rede ou base.
+
+Não deduplicar exclusivamente por:
+
+- nome semelhante;
+- coordenadas próximas;
+- rio semelhante.
+
+Criar correlação explícita apenas quando houver evidência suficiente.
+
+Persistir mapeamento:
+
+```text
+canonical_station_id
+provider
+provider_station_id
+mapping_evidence
+mapping_status
+confirmed_at
+```
+
+### 14. Farm360 — Hidrologia
+
+Quando existirem dados reais aplicáveis à propriedade, o Farm360 deve apresentar uma seção de Hidrologia.
+
+#### 14.1 Chuva
+
+Exibir:
+
+- última observação;
+- acumulado quando cientificamente válido;
+- estação;
+- fonte;
+- timestamp;
+- freshness;
+- qualidade.
+
+#### 14.2 Nível do rio
+
+Exibir:
+
+- última observação;
+- estação;
+- rio;
+- fonte;
+- timestamp;
+- freshness;
+- tendência quando derivada corretamente.
+
+#### 14.3 Vazão
+
+Exibir quando disponível:
+
+- valor;
+- unidade;
+- estação;
+- timestamp;
+- fonte;
+- freshness.
+
+#### 14.4 Séries
+
+Disponibilizar:
+
+```text
+24h
+7d
+30d
+janela de evento
+histórico
+```
+
+Não gerar histórico sintético.
+
+### 15. Caso de validação — Vale do Ribeira / setembro de 2026
+
+Utilizar o evento de setembro de 2026 como caso real de validação quando houver observações oficiais disponíveis.
+
+Janela de referência já utilizada no projeto:
+
+```text
+2026-09-11T10:59:10Z
+até
+2026-09-14T20:00:00Z
+```
+
+Hipóteses permanecem independentes:
+
+```text
+H1 — chuva local
+H2 — chuva a montante
+H3 — reservatório / Capivari
+H4 — contexto ENSO
+```
+
+Nenhuma hipótese deve ser promovida automaticamente para causalidade confirmada.
+
+Resultado científico permitido:
+
+```text
+UNKNOWN
+INCONCLUSIVE
+PARTIALLY_SUPPORTED
+SUPPORTED
+```
+
+conforme evidências efetivamente disponíveis.
+
+### 16. Integração com regras
+
+Regras hidrológicas devem ser versionadas.
+
+Exemplo conceitual:
+
+```text
+observação oficial
+→ contexto
+→ regra versionada
+→ decisão
+```
+
+Toda regra deve registrar:
+
+- versão;
+- parâmetros;
+- fonte dos dados;
+- período considerado;
+- condição;
+- resultado;
+- limitações.
+
+Não inserir thresholds arbitrários em produção sem aprovação/documentação.
+
+### 17. Alertas
+
+Alertas podem ser gerados somente quando houver regra/configuração aplicável.
+
+Exemplos futuros:
+
+- chuva acumulada elevada;
+- elevação rápida do nível;
+- nível acima de threshold;
+- perda de telemetria;
+- estação sem atualização;
+- combinação de evidências.
+
+Alertas devem apontar para a observação e regra que os originaram.
+
+### 18. Freshness
+
+Cada informação hidrológica deve apresentar freshness.
+
+Persistir:
+
+```text
+observed_at
+received_at
+ingested_at
+latest_available_at
+latest_processed_at
+```
+
+A UI deve distinguir:
+
+```text
+Última observação
+Última atualização da plataforma
+Fonte indisponível
+Dado desatualizado
+```
+
+Não tratar dado antigo como atual.
+
+### 19. Histórico
+
+Nunca sobrescrever observações anteriores.
+
+Persistir séries temporais para permitir:
+
+- timeline;
+- comparação;
+- tendências;
+- análise de evento;
+- validação retroativa;
+- relatórios;
+- regras temporais.
+
+### 20. Falhas do provider
+
+Estados mínimos de job/provider:
+
+```text
+QUEUED
+RUNNING
+SUCCEEDED
+FAILED
+RETRYABLE
+BLOCKED
+```
+
+Falhas transitórias devem usar retry com backoff limitado.
+
+Falhas persistentes devem ser registradas.
+
+Uma indisponibilidade da SP Águas ou ANA não deve derrubar Farm360 nem apagar dados históricos.
+
+### 21. Segurança
+
+Preservar:
+
+- tenant isolation;
+- RLS;
+- RBAC;
+- audit;
+- secrets fora do Git;
+- serviços internos em loopback;
+- logs sem credenciais;
+- Evidence First.
+
+A API pública da SP Águas não deve ser usada como justificativa para expor endpoints internos da Ribeira.
+
+### 22. Observabilidade
+
+Monitorar internamente:
+
+- última execução do provider;
+- latência;
+- HTTP status;
+- quantidade de observações importadas;
+- deduplicações;
+- erros;
+- stale stations;
+- falhas consecutivas;
+- duração do job.
+
+Não expor observabilidade interna sensível publicamente.
+
+### 23. Documentação obrigatória
+
+Atualizar continuamente:
+
+```text
+docs/integrations/
+docs/data/
+docs/provenance/
+docs/architecture/
+docs/operations/
+docs/product/
+docs/pilot/
+```
+
+Registrar contratos observados, comportamento real da API, parâmetros, unidades, limitações, providers, refresh e proveniência.
+
+### 24. Testes
+
+Implementar no mínimo:
+
+- contract tests do SIBH;
+- adapter tests;
+- parâmetros de data;
+- parsing JSON;
+- parsing CSV quando usado;
+- normalização;
+- unidade;
+- idempotência;
+- deduplicação;
+- atualização incremental;
+- retry/backoff;
+- failure handling;
+- time series;
+- freshness;
+- seleção estação/propriedade;
+- RLS;
+- tenant isolation;
+- Flood context;
+- Farm360 Hydrology.
+
+Fixtures são permitidas somente em testes e devem ser explicitamente identificadas como sintéticas.
+
+Nunca usar fixture como dado de produção.
+
+### 25. Prioridade de implementação
+
+Executar aproximadamente nesta ordem:
+
+```text
+1. Validar contrato real da API SIBH
+2. Implementar SPAguaSIBHProvider
+3. Persistir catálogo de estações
+4. Importar lista oficial Vale do Ribeira quando disponível
+5. Ingestão pluviométrica
+6. Ingestão de nível
+7. Ingestão de vazão
+8. Refresh automático
+9. Relação estação ↔ propriedade
+10. Série temporal
+11. Farm360 Hydrology
+12. Flood integration
+13. ANA provider foundation
+14. ANA protected authentication
+15. Correlação entre providers
+16. Regras/alertas
+17. Relatórios
+```
+
+Bloqueio da ANA por credencial nunca deve impedir o avanço independente do SIBH.
+
+### 26. Requisito para o agente autônomo
+
+Esta integração é uma prioridade ativa.
+
+Antes de escolher novo incremento relacionado a:
+
+```text
+Flood
+Environment
+Hydrology
+Farm360 hydrological context
+```
+
+o agente deve ler este documento.
+
+A integração pública SIBH pode avançar independentemente de credenciais da ANA.
+
+O agente deve:
+
+```text
+inspecionar
+→ implementar
+→ testar
+→ documentar
+→ revisar diff
+→ verificar secrets
+→ commit
+→ push
+→ continuar
+```
+
+Não parar após um milestone normal.
+
+### 27. Critérios de aceite
+
+#### SIBH
+
+```text
+SP_AGUAS_PROVIDER=IMPLEMENTED
+STATION_CATALOGUE=IMPLEMENTED
+RAINFALL_INGESTION=IMPLEMENTED
+RIVER_LEVEL_INGESTION=IMPLEMENTED
+FLOW_INGESTION=IMPLEMENTED_WHERE_AVAILABLE
+AUTO_REFRESH=IMPLEMENTED
+PROVENANCE=IMPLEMENTED
+```
+
+#### Farm360
+
+```text
+HYDROLOGY_SECTION=IMPLEMENTED
+FRESHNESS=IMPLEMENTED
+TIME_SERIES=IMPLEMENTED
+STATION_SOURCE_VISIBLE=YES
+```
+
+#### Flood
+
+```text
+REAL_OBSERVATIONS_USED=YES
+FABRICATED_VALUES=NO
+CAUSALITY_INFERRED_WITHOUT_EVIDENCE=NO
+```
+
+#### ANA
+
+```text
+ANA_PROVIDER=IMPLEMENTED
+ANA_SECRET_IN_GIT=NO
+ANA_AUTH=PROTECTED_RUNTIME_CONFIG
+ANA_AUTH_ROUTE=VERIFIED
+ANA_BEARER_TOKEN=IMPLEMENTED
+ANA_TOKEN_CACHE=IMPLEMENTED
+ANA_HIGH_FREQUENCY_REAUTH=NO
+ANA_STATION_INVENTORY=IMPLEMENTED
+ANA_TELEMETRIC_SERIES=IMPLEMENTED
+ANA_QC_PRESERVED=YES
+ANA_PROVENANCE=IMPLEMENTED
+```
+
+### 28. Estado canônico das fontes
+
+```text
+SP ÁGUAS SIBH
+STATUS=OFFICIAL_PUBLIC_API_AVAILABLE
+AUTH=NONE
+AUTOMATION=RECOMMENDED_BY_PROVIDER
+DOCUMENTATION=PARTIAL/IN_DEVELOPMENT
+
+ANA HIDROWEBSERVICE
+STATUS=ACCESS_APPROVED
+AUTH=REQUIRED
+AUTH_ROUTE=/EstacoesTelemetricas/OAUth/v1
+AUTH_SCHEME=Bearer
+DECLARED_TOKEN_TTL=60_MINUTES
+TOKEN_REUSE=REQUIRED
+HIGH_FREQUENCY_REAUTH=FORBIDDEN
+BASE_URL=https://www.ana.gov.br/hidrowebservice/EstacoesTelemetricas
+PRIMARY_STATION_ROUTE=/EstacoesTelemetricas/HidroInventarioEstacoes/v1
+PRIMARY_TELEMETRY_ROUTE=/EstacoesTelemetricas/HidroinfoanaSerieTelemetricaAdotada/v1
+AUTOMATION=SUPPORTED
+DOCUMENTATION=OFFICIAL_MANUAL_20.02.2026_AND_SWAGGER
+```
+
+### 29. Princípio final
+
+A Ribeira Conecta deve usar dados hidrológicos oficiais como evidência operacional.
+
+A plataforma nunca deve transformar:
+
+```text
+ausência de dados
+```
+
+em:
+
+```text
+ausência de risco
+```
+
+e nunca deve transformar:
+
+```text
+correlação
+```
+
+em:
+
+```text
+causalidade confirmada
+```
+
+sem evidência suficiente.

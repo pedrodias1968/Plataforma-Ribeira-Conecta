@@ -784,10 +784,8 @@ class GeospatialPostgresTests(unittest.TestCase):
             self.assertEqual(snapshot_row["geometry_checksum"], field.boundary_checksum)
 
             with self.store.tenant_transaction(tenant.id):
-                persisted_delta = (
-                    application.geospatial.repository.find_temporal_delta(
-                        tenant.id, baseline.id, target.id, field.id
-                    )
+                persisted_delta = application.geospatial.repository.find_temporal_delta(
+                    tenant.id, baseline.id, target.id, field.id
                 )
             self.assertIsNotNone(persisted_delta)
             assert persisted_delta is not None
