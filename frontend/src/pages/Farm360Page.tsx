@@ -29,6 +29,7 @@ import { SceneOperationsPanel } from "../features/operations/SceneOperationsPane
 import { BoundaryImportPanel } from "../features/property/BoundaryImportPanel";
 import { BoundaryEditorPanel } from "../features/property/BoundaryEditorPanel";
 import { DataAvailabilityPanel } from "../features/context/DataAvailabilityPanel";
+import { HydrologyPanel } from "../features/hydrology/HydrologyPanel";
 import { formatHectares } from "../formatting";
 
 interface Props {
@@ -367,6 +368,7 @@ export function Farm360Page({
         </section>
         <LayerManager basemap={basemap} ndviAvailable={Boolean(product && product.processing_status === "SUCCEEDED")} ndviEnabled={ndviEnabled} onNdviEnabled={setNdviEnabled} deltaAvailable={Boolean(comparison?.comparison.delta_product_id)} deltaEnabled={deltaEnabled} onDeltaEnabled={setDeltaEnabled} />
         <DataAvailabilityPanel property={property} assets={assets} fields={fields} scenes={scenes} timeline={timeline} fieldsUnavailable={partialLoadIssues.fields} />
+        <HydrologyPanel api={api} tenantId={tenantId} />
         <IntelligenceReportPanel property={property} assets={assets} fields={fields} scenes={scenes} provenance={provenance} decisions={decisions} open={reportOpen} onOpenChange={setReportOpen} />
         <PilotFeedbackPanel api={api} tenantId={tenantId} propertyId={propertyId} />
         {!partialLoadIssues.decisions && <RiskDecisionPanel decisions={decisions} fields={fields} api={api} tenantId={tenantId} canCompleteActions={canCompleteActions} onActionCompleted={refreshDecisions} />}

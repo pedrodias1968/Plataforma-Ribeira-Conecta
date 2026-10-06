@@ -372,3 +372,64 @@ export interface Provenance {
     evidence: unknown;
   }>;
 }
+
+export interface ValeDoRibeiraSituation {
+  generated_at: string;
+  source_health: Array<{
+    provider: string;
+    status: string;
+    last_success?: string;
+    last_observation?: string;
+    failure_code?: string;
+    updated_at: string;
+  }>;
+  rainfall_summary: {
+    status: string;
+    provider?: string;
+    reason?: string;
+    latest_observation?: string;
+    observations?: number;
+    quality?: string;
+  };
+  river_summary: {
+    status: string;
+    provider?: string;
+    reason?: string;
+    latest_observation?: string;
+    observations?: number;
+    quality?: string;
+  };
+  reservoir_events: Array<{
+    event_type: string;
+    published_at: string;
+    effective_at?: string;
+    numeric_value?: number;
+    unit?: string;
+    description_sanitized?: string;
+    source_reference?: string;
+    classification?: string;
+  }>;
+  climate_context: Array<{
+    provider: string;
+    issued_on: string;
+    valid_window?: string;
+    enso_state?: string;
+    probability?: number;
+    strength_category?: string;
+    source_reference?: string;
+    classification?: string;
+  }>;
+  active_alerts: Array<{
+    id: string;
+    type: string;
+    severity: string;
+    issued_at: string;
+    source: string;
+    description: string;
+  }>;
+  unknowns?: string[];
+  evidence?: {
+    scope_geometry_status?: string;
+    scope_reference?: string | null;
+  };
+}

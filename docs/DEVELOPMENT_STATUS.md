@@ -18,7 +18,7 @@ A plataforma Ribeira Conecta Intelligence encontra-se em estado funcional e estr
 - **Backend Linter (`ruff`) & Typecheck (`mypy`):** 0 erros em 55 arquivos fonte.
 - **Migrations:** 46 migrations aplicadas sequencialmente sem falhas (`001_initial.sql` até `046_property_boundary_field_guard.sql`).
 - **TODOs / FIXMEs no código ativo:** 0 pendências órfãs.
-- **Git Status:** Clean working directory, 2 commits ahead (hydrology AGENTS.md + formatting).
+- **Git Status:** Clean working directory, 4 commits ahead (hydrology AGENTS.md + hydrology frontend + format updates).
 
 ---
 
@@ -46,6 +46,19 @@ O último ciclo de desenvolvimento completou com sucesso a **Fase 1f (Quality-Ma
 - ✅ Melhorias de formatação de código em soil.py, api.py, iam.py, postgres.py, service.py.
 - ✅ Atualização de formatação de testes para consistência.
 - ✅ Commit e push das atualizações para o branch atual.
+
+### Cycle 2026-10-06 (Farm360 Hidrologia)
+- ✅ Implementação do painel Farm360 Hydrology (HydrologyPanel.tsx) com visualização de:
+  - Pluviometria e nível de rios com status e metadados
+  - Eventos de operação de reservatórios
+  - Contexto climático (ENSO)
+  - Alertas ativos
+  - Dados desconhecidos (Evidence First)
+- ✅ Adição do endpoint ValeDoRibeiraSituation ao API client
+- ✅ Definição de tipos TypeScript para ValeDoRibeiraSituation
+- ✅ Integração do painel HydrologyPanel no Farm360Page
+- ✅ Todosos testes passando: 209 backend (49 skips), 91 frontend.
+- ✅ Qualidade de código verificada: lint, typecheck, build sem erros.
 
 ---
 

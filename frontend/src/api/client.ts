@@ -378,6 +378,11 @@ export class Farm360Api {
       `/v1/tenants/${encodeURIComponent(tenantId)}/flood-exposure-assessments?${params.toString()}`,
     );
   }
+  valeDoRibeiraSituation(tenantId: string) {
+    return this.get<ValeDoRibeiraSituation>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/vale-do-ribeira/situation`,
+    );
+  }
   tileTemplate(tenantId: string, productId: string) {
     return `${this.baseUrl}/v1/tenants/${encodeURIComponent(tenantId)}/derived-products/${encodeURIComponent(productId)}/tiles/{z}/{x}/{y}`;
   }
