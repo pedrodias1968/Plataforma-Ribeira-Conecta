@@ -14,7 +14,8 @@ It never contains a secret.
 | USGS/NASA Landsat 8/9 | `LATER` | Official contract/licence/comparability test required before use. |
 | JRC | `LATER` | Dataset-specific provenance and methodology required. |
 | WIS2/INMET | `PREPARED/VERIFY` | Use only verified provider contract and station provenance. |
-| ANA | `BLOCKED` | `AUTH_REQUIRED_PENDING_PROVIDER`. |
+| SP Águas SIBH | `CURRENT` | Public official API for rainfall, river stage and discharge; [details](HYDROLOGY_SP_AGUAS_ANA.md). |
+| ANA HidroWebService | `CURRENT` | Access approved; requires runtime-authenticated Bearer token; [details](HYDROLOGY_SP_AGUAS_ANA.md). |
 | SAISP | `BLOCKED` | Automation is not approved; fail closed. |
 | IoT provider/device | `PLANNED` | Tenant-bound authenticated MQTT/HTTPS and health/provenance contract. |
 

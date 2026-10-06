@@ -15,10 +15,10 @@ A plataforma Ribeira Conecta Intelligence encontra-se em estado funcional e estr
 - **Backend Integration Tests (PostgreSQL/PostGIS/RLS):** 41 aprovados, 2 skips controlados (CDSE externo).
 - **Frontend Tests (Vitest):** 91 aprovados (29 suites, 0 falhas).
 - **Frontend Typecheck (`tsc`) & Lint (`eslint`):** 0 erros.
-- **Backend Linter (`ruff`) & Typecheck (`mypy`):** 0 erros em 54 arquivos fonte.
+- **Backend Linter (`ruff`) & Typecheck (`mypy`):** 0 erros em 55 arquivos fonte.
 - **Migrations:** 46 migrations aplicadas sequencialmente sem falhas (`001_initial.sql` até `046_property_boundary_field_guard.sql`).
 - **TODOs / FIXMEs no código ativo:** 0 pendências órfãs.
-- **Git Status:** Clean working directory, 1 commit ahead (test fixes) após auditoria anterior.
+- **Git Status:** Clean working directory, 2 commits ahead (hydrology AGENTS.md + formatting).
 
 ---
 
@@ -36,6 +36,45 @@ O último ciclo de desenvolvimento completou com sucesso a **Fase 1f (Quality-Ma
 - ✅ Todos os testes passando: 209 backend (49 skips), 91 frontend.
 - ✅ Qualidade de código verificada: lint, typecheck, build sem erros.
 - ✅ Commit e push da correção para o branch atual.
+
+### Cycle 2026-10-06 (Integração Hidrológica Oficial)
+- ✅ Atualização de AGENTS.md com Section 42 para regras obrigatórias de integração hidrológica (SP Águas SIBH + ANA).
+- ✅ Atualização de prioridades para incluir integrações hidrológicas oficiais.
+- ✅ Documentação dos estados atuais dos provedores (SP Águas SIBH: API PÚBLICA, ANA: ACESSO APROVADO).
+- ✅ Separação explícita de SAISP (fail-closed) e SP Águas SIBH (API pública).
+- ✅ Adição do documento canônico `HYDROLOGY_SP_AGUAS_ANA.md`.
+- ✅ Melhorias de formatação de código em soil.py, api.py, iam.py, postgres.py, service.py.
+- ✅ Atualização de formatação de testes para consistência.
+- ✅ Commit e push das atualizações para o branch atual.
+
+---
+
+## 2.1 Próximos Passos
+
+Com a implementação da Fase 1f concluída e a integração hidrológica oficial documentada, os próximos incrementos autônomos devem priorizar:
+
+1. **Integração ANA HidroWebService** (prioridade alta)
+   - Implementação do provider ANA seguindo o manual oficial v20.02.2026
+   - Gerenciamento de token Bearer com cache e renovação periódica
+   - Suporte a inventário de estações e série telemétrica adotada
+   - Proteção de credenciais via configuração runtime (`~/.config/ribeira/ana-hidroweb.env`)
+
+2. **Farm360 Hydrology Section** (prioridade alta)
+   - Exibição de observações oficiais de chuva, nível e vazão
+   - Fonte, timestamp e freshness visíveis para cada dado
+   - Séries temporais de 24h, 7d, 30d e evento
+   - Contexto para regras e alertas de inundação
+
+3. **Flood/Environment Integration** (prioridade alta)
+   - Utilização de observações reais para contexto de inundação
+   - Separação explícita de evidências (chuva, nível, vazão, reservatórios)
+   - Sem inferência automática de causalidade sem evidência suficiente
+   - Correlação entre providers (SP Águas + ANA) onde apropriado
+
+4. **Regras Hidrológicas e Alertas** (prioridade média)
+   - Regras versionadas com escopo tenant/property
+   - Alertas baseados em thresholds e tendências
+   - Referência a observações e regras específicas
 
 ---
 
