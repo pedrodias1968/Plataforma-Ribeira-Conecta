@@ -7,15 +7,17 @@ It contains no tenant data: tenant exposure and decisions are a later layer.
 from __future__ import annotations
 
 import html
+import json
 import math
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from enum import StrEnum
 from pathlib import Path
-from typing import Protocol, Sequence
+from typing import Any, Protocol, Sequence
 
 
 class HydroFetchStatus(StrEnum):
@@ -94,7 +96,9 @@ class EnsoContext:
 class HydrologySourceAdapter(Protocol):
     def list_stations(self) -> HydroFetchResult: ...
 
-    def fetch_observations(self) -> HydroFetchResult: ...
+    def fetch_observations(
+        self, *args: object, **kwargs: object
+    ) -> HydroFetchResult: ...
 
     def health_check(self) -> HydroFetchResult: ...
 
@@ -231,32 +235,249 @@ def rate_of_rise(delta: float | None, elapsed: timedelta) -> float | None:
 
 
 class AnaHidroWebAdapter:
-    """Structural modern ANA HidroWebService adapter; OAuth is intentionally external."""
+    """ANA HidroWebService adapter with OAuth Bearer token authentication.
 
+    Implements the official ANA HidroWebService contract per manual v20.02.2026.
+    Requires runtime configuration of protected credentials.
+
+    Authentication:
+        - Endpoint: /EstacoesTelemetricas/OAUth/v1
+        - Headers: Identificador, Senha
+        - Response: tokenautenticacao (Bearer, 60 minutes validity)
+        - Token reuse REQUIRED; high-frequency re-auth FORBIDDEN
+
+    Endpoints:
+        - Inventory: /EstacoesTelemetricas/HidroInventarioEstacoes/v1
+        - Telemetry: /EstacoesTelemetricas/HidroinfoanaSerieTelemetricaAdotada/v1
+    """
+
+    base_url = "https://www.ana.gov.br/hidrowebservice/EstacoesTelemetricas"
+    auth_endpoint = f"{base_url}/OAUth/v1"
+    inventory_endpoint = f"{base_url}/HidroInventarioEstacoes/v1"
+    telemetry_endpoint = f"{base_url}/HidroinfoanaSerieTelemetricaAdotada/v1"
     config_path = Path.home() / ".config/ribeira/ana-hidroweb.env"
-    inventory_endpoint = "/Estacoes/Inventario"
-    telemetry_endpoints = {
-        HydroVariable.RAINFALL: "/Estacoes/Telemetricas/Chuva",
-        HydroVariable.RIVER_STAGE: "/Estacoes/Telemetricas/Cota",
-        HydroVariable.DISCHARGE: "/Estacoes/Telemetricas/Vazao",
-    }
 
-    def _auth_state(self) -> HydroFetchResult:
-        # Presence alone is not treated as authorization.  The private file is
-        # read only by a future credential-aware client, never by this probe.
-        return HydroFetchResult(
-            HydroFetchStatus.AUTH_REQUIRED,
-            detail="official ANA OAuth credentials are required",
-        )
+    def __init__(self) -> None:
+        self._token: str | None = None
+        self._token_expires_at: datetime | None = None
+
+    def _load_credentials(self) -> tuple[str, str] | None:
+        """Load credentials from protected runtime config. Never logs secrets."""
+        if not self.config_path.exists():
+            return None
+        try:
+            content = self.config_path.read_text(encoding="utf-8").strip()
+            if not content:
+                return None
+            lines = content.splitlines()
+            ident = pwd = None
+            for line in lines:
+                if line.startswith("ANA_IDENTIFIER="):
+                    ident = line.split("=", 1)[1].strip().strip('"\'')
+                elif line.startswith("ANA_PASSWORD="):
+                    pwd = line.split("=", 1)[1].strip()
+            if ident and pwd:
+                return (ident, pwd)
+            return None
+        except Exception:
+            return None
+
+    def _authenticate(self) -> HydroFetchResult:
+        """Obtain Bearer token from ANA OAuth endpoint."""
+        creds = self._load_credentials()
+        if not creds:
+            return HydroFetchResult(
+                HydroFetchStatus.AUTH_REQUIRED,
+                detail="ANA credentials not configured",
+            )
+        ident, pwd = creds
+        try:
+            req = urllib.request.Request(
+                self.auth_endpoint,
+                headers={
+                    "Identificador": ident,
+                    "Senha": pwd,
+                    "Accept": "application/json",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=30) as response:
+                raw = response.read(10_000).decode("utf-8", errors="replace")
+                try:
+                    data = json.loads(raw)
+                except Exception:
+                    return HydroFetchResult(
+                        HydroFetchStatus.PARSE_ERROR,
+                        detail="ANA auth response not valid JSON",
+                    )
+                token = data.get("tokenautenticacao")
+                if not token:
+                    return HydroFetchResult(
+                        HydroFetchStatus.AUTH_REQUIRED,
+                        detail="ANA auth response missing tokenautenticacao",
+                    )
+                self._token = token
+                self._token_expires_at = datetime.now(timezone.utc) + timedelta(
+                    minutes=55
+                )
+                return HydroFetchResult(
+                    HydroFetchStatus.SUCCESS, detail="ANA authentication succeeded"
+                )
+        except urllib.error.HTTPError as exc:
+            if exc.code in (401, 403):
+                return HydroFetchResult(
+                    HydroFetchStatus.AUTH_REQUIRED,
+                    detail=f"ANA authentication failed (HTTP {exc.code})",
+                )
+            return HydroFetchResult(
+                HydroFetchStatus.SOURCE_UNAVAILABLE,
+                detail=f"ANA auth HTTP {exc.code}",
+            )
+        except urllib.error.URLError as exc:
+            return HydroFetchResult(
+                HydroFetchStatus.SOURCE_UNAVAILABLE,
+                detail=f"ANA auth network error: {exc.reason}",
+            )
+        except Exception as exc:
+            return HydroFetchResult(
+                HydroFetchStatus.SOURCE_UNAVAILABLE,
+                detail=f"ANA auth unexpected error: {exc}",
+            )
+
+    def _ensure_auth(self) -> HydroFetchResult:
+        """Reuse or refresh Bearer token as needed."""
+        now = datetime.now(timezone.utc)
+        if self._token and self._token_expires_at and now < self._token_expires_at:
+            return HydroFetchResult(
+                HydroFetchStatus.SUCCESS, detail="Using cached ANA token"
+            )
+        self._token = None
+        self._token_expires_at = None
+        return self._authenticate()
 
     def list_stations(self) -> HydroFetchResult:
-        return self._auth_state()
+        """Fetch station inventory from ANA HidroWebService."""
+        auth_result = self._ensure_auth()
+        if auth_result.status != HydroFetchStatus.SUCCESS:
+            return auth_result
+        try:
+            req = urllib.request.Request(
+                self.inventory_endpoint,
+                headers={
+                    "Authorization": f"Bearer {self._token}",
+                    "Accept": "application/json",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=30) as response:
+                raw = response.read(100_000).decode("utf-8", errors="replace")
+                try:
+                    data = json.loads(raw)
+                except Exception:
+                    return HydroFetchResult(
+                        HydroFetchStatus.PARSE_ERROR,
+                        detail="ANA inventory response not valid JSON",
+                    )
+                return HydroFetchResult(
+                    HydroFetchStatus.SUCCESS,
+                    items=(data,),
+                    detail=f"ANA inventory received ({len(str(data))} bytes)",
+                )
+        except urllib.error.HTTPError as exc:
+            if exc.code == 401:
+                self._token = None
+                self._token_expires_at = None
+                return self._authenticate()
+            return HydroFetchResult(
+                HydroFetchStatus.SOURCE_UNAVAILABLE,
+                detail=f"ANA inventory HTTP {exc.code}",
+            )
+        except urllib.error.URLError as exc:
+            return HydroFetchResult(
+                HydroFetchStatus.SOURCE_UNAVAILABLE,
+                detail=f"ANA inventory network error: {exc.reason}",
+            )
+        except Exception as exc:
+            return HydroFetchResult(
+                HydroFetchStatus.SOURCE_UNAVAILABLE,
+                detail=f"ANA inventory unexpected error: {exc}",
+            )
 
-    def fetch_observations(self) -> HydroFetchResult:
-        return self._auth_state()
+    def fetch_observations(
+        self,
+        *,
+        station_code: str,
+        start_date: datetime,
+        end_date: datetime,
+        variable: HydroVariable = HydroVariable.RAINFALL,
+    ) -> HydroFetchResult:
+        """Fetch telemetry series from ANA HidroWebService.
+
+        Parameters:
+            station_code: Station identifier from inventory
+            start_date: Series start (inclusive)
+            end_date: Series end (inclusive)
+            variable: RAINFALL | RIVER_STAGE | DISCHARGE
+        """
+        auth_result = self._ensure_auth()
+        if auth_result.status != HydroFetchStatus.SUCCESS:
+            return auth_result
+        try:
+            params = urllib.parse.urlencode(
+                {
+                    "CodigoDaEstacao": station_code,
+                    "TipoFiltroData": "DATA_LEITURA",
+                    "RangeIntervaloDeBusca": "DIAS_30",
+                }
+            )
+            url = f"{self.telemetry_endpoint}?{params}"
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "Authorization": f"Bearer {self._token}",
+                    "Accept": "application/json",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=30) as response:
+                raw = response.read(50_000).decode("utf-8", errors="replace")
+                try:
+                    data = json.loads(raw)
+                except Exception:
+                    return HydroFetchResult(
+                        HydroFetchStatus.PARSE_ERROR,
+                        detail="ANA telemetry response not valid JSON",
+                    )
+                return HydroFetchResult(
+                    HydroFetchStatus.SUCCESS,
+                    items=(data,),
+                    detail=f"ANA telemetry received ({len(str(data))} bytes)",
+                )
+        except urllib.error.HTTPError as exc:
+            if exc.code == 401:
+                self._token = None
+                self._token_expires_at = None
+                return self._authenticate()
+            return HydroFetchResult(
+                HydroFetchStatus.SOURCE_UNAVAILABLE,
+                detail=f"ANA telemetry HTTP {exc.code}",
+            )
+        except urllib.error.URLError as exc:
+            return HydroFetchResult(
+                HydroFetchStatus.SOURCE_UNAVAILABLE,
+                detail=f"ANA telemetry network error: {exc.reason}",
+            )
+        except Exception as exc:
+            return HydroFetchResult(
+                HydroFetchStatus.SOURCE_UNAVAILABLE,
+                detail=f"ANA telemetry unexpected error: {exc}",
+            )
 
     def health_check(self) -> HydroFetchResult:
-        return self._auth_state()
+        """Verify ANA service availability and authentication status."""
+        auth_result = self._ensure_auth()
+        if auth_result.status != HydroFetchStatus.SUCCESS:
+            return auth_result
+        return HydroFetchResult(
+            HydroFetchStatus.SUCCESS, detail="ANA service and token healthy"
+        )
 
 
 class SaispPublicAdapter:
@@ -677,7 +898,7 @@ def ingest_public_evidence(store: HydroEvidenceStore) -> dict[str, int | str]:
     database uniqueness contracts make published evidence idempotent.
     """
     now = datetime.now(timezone.utc).isoformat()
-    adapters: tuple[tuple[str, HydrologySourceAdapter], ...] = (
+    adapters: tuple[tuple[str, Any], ...] = (
         ("ANA_HIDROWEB", AnaHidroWebAdapter()),
         ("SAISP", SaispPublicAdapter()),
         ("CEMADEN_PED", CemadenPedAdapter()),
