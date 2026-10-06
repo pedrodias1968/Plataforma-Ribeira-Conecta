@@ -281,6 +281,170 @@ class SaispPublicAdapter:
         )
 
 
+class SPAguaSIBHAdapter:
+    """SP Águas SIBH provider for official hydrology observations.
+
+    This adapter implements the SIBH public API as documented by SP Águas.
+    The API is currently public and does not require authentication.
+
+    Endpoints:
+        - stations: https://apps.spaguas.sp.gov.br/sibh/api/v2/stations
+        - measurements: https://apps.spaguas.sp.gov.br/sibh/api/v2/measurements
+
+    Parâmetros (conforme SP Águas, validação empírica obrigatória):
+        - start_date: fim da série
+        - end_date: começo da série
+        - group_type: minute | hour | day | month
+        - station_prefixes_ids: comma-separated list
+        - format: json | csv
+    """
+
+    base_url = "https://apps.spaguas.sp.gov.br/sibh/api/v2"
+    stations_endpoint = f"{base_url}/stations"
+    measurements_endpoint = f"{base_url}/measurements"
+
+    def list_stations(self) -> HydroFetchResult:
+        """Fetch station inventory from SIBH."""
+        try:
+            _fetch_text(self.stations_endpoint)
+            return HydroFetchResult(
+                HydroFetchStatus.SUCCESS, detail="SIBH stations endpoint reached"
+            )
+        except urllib.error.HTTPError as exc:
+            if exc.code == 401:
+                return HydroFetchResult(
+                    HydroFetchStatus.AUTH_REQUIRED,
+                    detail="SIBH authentication required",
+                )
+            if exc.code == 429:
+                return HydroFetchResult(
+                    HydroFetchStatus.RATE_LIMITED,
+                    detail="SIBH rate limit exceeded",
+                )
+            return HydroFetchResult(
+                HydroFetchStatus.SOURCE_UNAVAILABLE,
+                detail=f"SIBH stations HTTP {exc.code}",
+            )
+        except urllib.error.URLError as exc:
+            return HydroFetchResult(
+                HydroFetchStatus.SOURCE_UNAVAILABLE,
+                detail=f"SIBH network error: {exc.reason}",
+            )
+        except Exception as exc:
+            return HydroFetchResult(
+                HydroFetchStatus.SOURCE_UNAVAILABLE,
+                detail=f"SIBH unexpected error: {exc}",
+            )
+
+    def fetch_observations(
+        self,
+        *,
+        start_date: datetime,
+        end_date: datetime,
+        group_type: str = "hour",
+        station_ids: Sequence[str] = (),
+        variable: HydroVariable = HydroVariable.RAINFALL,
+    ) -> HydroFetchResult:
+        """Fetch observations from SIBH.
+
+        Parâmetros:
+            start_date: fim da série (validação empírica obrigatória)
+            end_date: começo da série (validação empírica obrigatória)
+            group_type: minute | hour | day | month
+            station_ids: list of station IDs to filter
+            variable: RAINFALL | RIVER_STAGE | DISCHARGE
+        """
+        if group_type not in ("minute", "hour", "day", "month"):
+            return HydroFetchResult(
+                HydroFetchStatus.PARSE_ERROR,
+                detail=f"invalid group_type: {group_type}",
+            )
+
+        var_map = {
+            HydroVariable.RAINFALL: "rainfall",
+            HydroVariable.RIVER_STAGE: "level",
+            HydroVariable.DISCHARGE: "flow",
+        }
+        metric_param = var_map.get(variable, "rainfall")
+
+        query_parts = [
+            f"start_date={start_date.isoformat()}",
+            f"end_date={end_date.isoformat()}",
+            f"group_type={group_type}",
+            "format=json",
+            f"metric={metric_param}",
+        ]
+
+        if station_ids:
+            station_list = ",".join(str(s) for s in station_ids)
+            query_parts.append(f"station_prefixes_ids={station_list}")
+
+        query_string = "&".join(query_parts)
+        url = f"{self.measurements_endpoint}?{query_string}"
+
+        try:
+            _fetch_text(url)
+            return HydroFetchResult(
+                HydroFetchStatus.SUCCESS, detail="SIBH measurements endpoint reached"
+            )
+        except urllib.error.HTTPError as exc:
+            if exc.code == 401:
+                return HydroFetchResult(
+                    HydroFetchStatus.AUTH_REQUIRED,
+                    detail="SIBH authentication required",
+                )
+            if exc.code == 429:
+                return HydroFetchResult(
+                    HydroFetchStatus.RATE_LIMITED,
+                    detail="SIBH rate limit exceeded",
+                )
+            return HydroFetchResult(
+                HydroFetchStatus.SOURCE_UNAVAILABLE,
+                detail=f"SIBH measurements HTTP {exc.code}",
+            )
+        except urllib.error.URLError as exc:
+            return HydroFetchResult(
+                HydroFetchStatus.SOURCE_UNAVAILABLE,
+                detail=f"SIBH network error: {exc.reason}",
+            )
+        except Exception as exc:
+            return HydroFetchResult(
+                HydroFetchStatus.SOURCE_UNAVAILABLE,
+                detail=f"SIBH unexpected error: {exc}",
+            )
+
+    def health_check(self) -> HydroFetchResult:
+        """Quick health check against stations endpoint."""
+        try:
+            _fetch_text(self.stations_endpoint)
+            return HydroFetchResult(HydroFetchStatus.SUCCESS)
+        except urllib.error.HTTPError as exc:
+            if exc.code == 401:
+                return HydroFetchResult(
+                    HydroFetchStatus.AUTH_REQUIRED,
+                    detail="SIBH authentication required",
+                )
+            if exc.code == 429:
+                return HydroFetchResult(
+                    HydroFetchStatus.RATE_LIMITED,
+                    detail="SIBH rate limit exceeded",
+                )
+            return HydroFetchResult(
+                HydroFetchStatus.SOURCE_UNAVAILABLE,
+                detail=f"SIBH health HTTP {exc.code}",
+            )
+        except urllib.error.URLError as exc:
+            return HydroFetchResult(
+                HydroFetchStatus.SOURCE_UNAVAILABLE,
+                detail=f"SIBH network error: {exc.reason}",
+            )
+        except Exception as exc:
+            return HydroFetchResult(
+                HydroFetchStatus.SOURCE_UNAVAILABLE,
+                detail=f"SIBH unexpected error: {exc}",
+            )
+
+
 class CemadenPedAdapter:
     """CEMADEN PED is catalogued but never probed without its official JWT."""
 
@@ -301,7 +465,7 @@ class CemadenPedAdapter:
 
 
 def _fetch_text(
-    url: str, *, timeout_seconds: float = 10.0, max_bytes: int = 1_000_000
+    url: str, *, timeout_seconds: float = 30.0, max_bytes: int = 5_000_000
 ) -> str:
     request = urllib.request.Request(
         url, headers={"Accept": "text/html,application/xhtml+xml"}

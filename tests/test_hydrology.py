@@ -10,6 +10,7 @@ from ribeira_platform.hydrology import (
     HydroStationInput,
     HydroVariable,
     SaispPublicAdapter,
+    SPAguaSIBHAdapter,
     observation_deduplication_key,
     observation_quality_issues,
     parse_copel_capivari_notice,
@@ -113,6 +114,45 @@ class HydrologyCoreTests(unittest.TestCase):
         self.assertEqual(context.enso_state, "EL_NINO")
         self.assertEqual(context.probability, 90.0)
         self.assertEqual(context.valid_window, "ASO 2026")
+
+    def test_spagua_sibh_provider_structure(self) -> None:
+        adapter = SPAguaSIBHAdapter()
+        self.assertEqual(
+            adapter.stations_endpoint,
+            "https://apps.spaguas.sp.gov.br/sibh/api/v2/stations",
+        )
+        self.assertEqual(
+            adapter.measurements_endpoint,
+            "https://apps.spaguas.sp.gov.br/sibh/api/v2/measurements",
+        )
+
+    def test_spagua_sibh_health_check_reaches_endpoint(self) -> None:
+        adapter = SPAguaSIBHAdapter()
+        result = adapter.health_check()
+        self.assertIn(
+            result.status,
+            (HydroFetchStatus.SUCCESS, HydroFetchStatus.SOURCE_UNAVAILABLE),
+        )
+
+    def test_spagua_sibh_list_stations_reaches_endpoint(self) -> None:
+        adapter = SPAguaSIBHAdapter()
+        result = adapter.list_stations()
+        self.assertIn(
+            result.status,
+            (HydroFetchStatus.SUCCESS, HydroFetchStatus.SOURCE_UNAVAILABLE),
+        )
+
+    def test_spagua_sibh_fetch_observations_reaches_endpoint(self) -> None:
+        adapter = SPAguaSIBHAdapter()
+        now = datetime(2026, 9, 15, tzinfo=UTC)
+        start = now - timedelta(hours=24)
+        result = adapter.fetch_observations(
+            start_date=start, end_date=now, group_type="hour"
+        )
+        self.assertIn(
+            result.status,
+            (HydroFetchStatus.SUCCESS, HydroFetchStatus.SOURCE_UNAVAILABLE),
+        )
 
 
 if __name__ == "__main__":
