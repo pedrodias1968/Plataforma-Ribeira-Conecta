@@ -1133,6 +1133,10 @@ def create_app(
                 "SELECT property_id,status,COUNT(*) AS count FROM processing_job WHERE tenant_id=%s GROUP BY property_id,status",
                 (tenant_id,),
             ).fetchall()
+            assets = application.store.connection.execute(
+                "SELECT property_id,COUNT(*) AS count FROM asset WHERE tenant_id=%s AND property_id IS NOT NULL GROUP BY property_id",
+                (tenant_id,),
+            ).fetchall()
             scenes = application.store.connection.execute(
                 """SELECT DISTINCT ON (property_id) property_id, acquisition_datetime
                    FROM satellite_scene WHERE tenant_id=%s
@@ -1152,6 +1156,9 @@ def create_app(
             job_status.setdefault(str(job["property_id"]), {})[str(job["status"])] = (
                 int(job["count"])
             )
+        asset_count: dict[str, int] = {}
+        for asset in assets:
+            asset_count.setdefault(str(asset["property_id"]), int(asset["count"]))
         latest_scene = {str(row["property_id"]): row for row in scenes}
         latest_product = {str(row["property_id"]): row for row in products}
         items: list[dict[str, Any]] = []
@@ -1177,6 +1184,8 @@ def create_app(
                         product and product["output_reference"]
                     ),
                     "jobs": job_status.get(item.id, {}),
+                    "asset_count": asset_count.get(item.id, 0),
+                    "risk_count": None,
                 }
             )
             items.append(record)

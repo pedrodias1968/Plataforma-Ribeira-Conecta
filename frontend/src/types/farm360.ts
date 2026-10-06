@@ -176,6 +176,8 @@ export interface PortfolioProperty extends PropertyRecord {
   latest_ndvi_id: string | null;
   provenance_available: boolean;
   jobs: Record<string, number>;
+  asset_count: number;
+  risk_count: number | null;
 }
 
 export interface SatelliteAsset {
