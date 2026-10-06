@@ -24,7 +24,7 @@ https://apps.spaguas.sp.gov.br/sibh/api/v2/measurements
 - start_date
 - end_date
 - group_type
-- station_prefixes_ids
+- station_prefix_ids (ARRAY TYPE - URL encoding format pending validation)
 - format
 
 group_type:

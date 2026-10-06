@@ -516,7 +516,7 @@ class SPAguaSIBHAdapter:
         - start_date: fim da série
         - end_date: começo da série
         - group_type: minute | hour | day | month
-        - station_prefixes_ids: comma-separated list
+        - station_prefix_ids: array (formato URL pendente de validação)
         - format: json | csv
     """
 
@@ -574,6 +574,11 @@ class SPAguaSIBHAdapter:
             group_type: minute | hour | day | month
             station_ids: list of station IDs to filter
             variable: RAINFALL | RIVER_STAGE | DISCHARGE
+
+        Nota: SP Águas API requires station_prefix_ids as an array type.
+        URL array encoding (repeated parameters) returns HTTP 500.
+        POST with JSON body returns HTTP 404.
+        Waiting for SP Águas clarification on correct parameter format.
         """
         if group_type not in ("minute", "hour", "day", "month"):
             return HydroFetchResult(
@@ -598,15 +603,29 @@ class SPAguaSIBHAdapter:
 
         if station_ids:
             station_list = ",".join(str(s) for s in station_ids)
-            query_parts.append(f"station_prefixes_ids={station_list}")
+            query_parts.append(f"station_prefix_ids={station_list}")
 
         query_string = "&".join(query_parts)
         url = f"{self.measurements_endpoint}?{query_string}"
 
         try:
-            _fetch_text(url)
+            raw = _fetch_text(url)
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                return HydroFetchResult(
+                    HydroFetchStatus.PARSE_ERROR,
+                    detail="SIBH measurements response not valid JSON",
+                )
+            if not isinstance(data, list):
+                return HydroFetchResult(
+                    HydroFetchStatus.PARSE_ERROR,
+                    detail=f"SIBH measurements response type is {type(data)}, expected list",
+                )
             return HydroFetchResult(
-                HydroFetchStatus.SUCCESS, detail="SIBH measurements endpoint reached"
+                HydroFetchStatus.SUCCESS,
+                items=tuple(data),
+                detail=f"SIBH measurements received ({len(data)} items)",
             )
         except urllib.error.HTTPError as exc:
             if exc.code == 401:
