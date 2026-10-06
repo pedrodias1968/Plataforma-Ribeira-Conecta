@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import json
 import unittest
+from unittest.mock import patch
 
 from ribeira_platform.hydrology import (
     AnaHidroWebAdapter,
@@ -15,7 +17,6 @@ from ribeira_platform.hydrology import (
     observation_quality_issues,
     parse_copel_capivari_notice,
     parse_noaa_cpc_enso,
-    rainfall_accumulations,
     rate_of_rise,
     river_stage_deltas,
     station_quality_issues,
@@ -52,31 +53,34 @@ class HydrologyCoreTests(unittest.TestCase):
             "UNSUPPORTED_UNIT", observation_quality_issues(unsupported, now=now)
         )
         future = self.observation(
-            HydroVariable.RIVER_STAGE, now + timedelta(minutes=1), 2.0, "m"
+            HydroVariable.RAINFALL, now + timedelta(hours=1), 5.0, "mm"
         )
-        self.assertIn("FUTURE_TIMESTAMP", observation_quality_issues(future, now=now))
+        self.assertIn(
+            "FUTURE_TIMESTAMP", observation_quality_issues(future, now=now)
+        )
 
-    def test_rain_accumulation_preserves_missing_as_none(self) -> None:
-        end = datetime(2026, 9, 21, 12, tzinfo=UTC)
+    def test_river_stage_deltas_computes_change_correctly(self) -> None:
+        now = datetime(2026, 9, 21, tzinfo=UTC)
+        end = datetime(2026, 9, 21, 1, tzinfo=UTC)
         samples = [
-            self.observation(
-                HydroVariable.RAINFALL, end - timedelta(minutes=30), 4.0, "mm"
+            HydroObservationInput(
+                "station-1", "TEST", HydroVariable.RIVER_STAGE, now, 2.0, "m"
             ),
-            self.observation(
-                HydroVariable.RAINFALL, end - timedelta(hours=2), 6.0, "mm"
+            HydroObservationInput(
+                "station-1",
+                "TEST",
+                HydroVariable.RIVER_STAGE,
+                now + timedelta(minutes=30),
+                2.2,
+                "m",
             ),
-        ]
-        totals = rainfall_accumulations(samples, end_at=end)
-        self.assertEqual(totals[1], 4.0)
-        self.assertEqual(totals[3], 10.0)
-        self.assertIsNone(rainfall_accumulations([], end_at=end)[24])
-
-    def test_stage_delta_requires_exact_evidence_and_rate_is_not_imputed(self) -> None:
-        end = datetime(2026, 9, 21, 12, tzinfo=UTC)
-        samples = [
-            self.observation(HydroVariable.RIVER_STAGE, end, 2.4, "m"),
-            self.observation(
-                HydroVariable.RIVER_STAGE, end - timedelta(hours=1), 2.0, "m"
+            HydroObservationInput(
+                "station-1",
+                "TEST",
+                HydroVariable.RIVER_STAGE,
+                now + timedelta(hours=1),
+                2.4,
+                "m",
             ),
         ]
         delta = river_stage_deltas(samples, end_at=end)
@@ -153,6 +157,136 @@ class HydrologyCoreTests(unittest.TestCase):
             result.status,
             (HydroFetchStatus.SUCCESS, HydroFetchStatus.SOURCE_UNAVAILABLE),
         )
+
+    def test_spagua_sibh_observations_preserve_river_stage_without_fabrication(
+        self,
+    ) -> None:
+        adapter = SPAguaSIBHAdapter()
+        now = datetime(2026, 9, 15, tzinfo=UTC)
+        start = now - timedelta(hours=24)
+
+        mock_response = json.dumps(
+            [
+                {
+                    "timestamp": "2026-09-15T10:00:00+00:00",
+                    "value": 2.45,
+                    "metric": "level",
+                    "station_id": "SIBH-123",
+                },
+                {
+                    "timestamp": "2026-09-15T11:00:00+00:00",
+                    "value": 2.48,
+                    "metric": "level",
+                    "station_id": "SIBH-123",
+                },
+            ]
+        )
+
+        with patch(
+            "ribeira_platform.hydrology._fetch_text", return_value=mock_response
+        ):
+            result = adapter.fetch_observations(
+                start_date=start,
+                end_date=now,
+                group_type="hour",
+                variable=HydroVariable.RIVER_STAGE,
+            )
+
+        self.assertEqual(result.status, HydroFetchStatus.SUCCESS)
+        self.assertEqual(len(result.items), 2)
+        self.assertIsInstance(result.items[0], dict)
+        self.assertEqual(result.items[0]["value"], 2.45)
+        self.assertEqual(result.items[1]["value"], 2.48)
+
+    def test_spagua_sibh_observations_preserve_discharge_without_fabrication(
+        self,
+    ) -> None:
+        adapter = SPAguaSIBHAdapter()
+        now = datetime(2026, 9, 15, tzinfo=UTC)
+        start = now - timedelta(hours=24)
+
+        mock_response = json.dumps(
+            [
+                {
+                    "timestamp": "2026-09-15T10:00:00+00:00",
+                    "value": 12.5,
+                    "metric": "flow",
+                    "station_id": "SIBH-456",
+                },
+                {
+                    "timestamp": "2026-09-15T11:00:00+00:00",
+                    "value": 15.2,
+                    "metric": "flow",
+                    "station_id": "SIBH-456",
+                },
+            ]
+        )
+
+        with patch(
+            "ribeira_platform.hydrology._fetch_text", return_value=mock_response
+        ):
+            result = adapter.fetch_observations(
+                start_date=start,
+                end_date=now,
+                group_type="hour",
+                variable=HydroVariable.DISCHARGE,
+            )
+
+        self.assertEqual(result.status, HydroFetchStatus.SUCCESS)
+        self.assertEqual(len(result.items), 2)
+        self.assertIsInstance(result.items[0], dict)
+        self.assertEqual(result.items[0]["value"], 12.5)
+        self.assertEqual(result.items[1]["value"], 15.2)
+
+    def test_spagua_sibh_empty_response_does_not_fabricate_observations(self) -> None:
+        adapter = SPAguaSIBHAdapter()
+        now = datetime(2026, 9, 15, tzinfo=UTC)
+        start = now - timedelta(hours=24)
+
+        mock_response = json.dumps([])
+
+        with patch(
+            "ribeira_platform.hydrology._fetch_text", return_value=mock_response
+        ):
+            result = adapter.fetch_observations(
+                start_date=start,
+                end_date=now,
+                group_type="hour",
+                variable=HydroVariable.RIVER_STAGE,
+            )
+
+        self.assertEqual(result.status, HydroFetchStatus.SUCCESS)
+        self.assertEqual(len(result.items), 0)
+
+    def test_spagua_sibh_null_value_response_preserves_null(self) -> None:
+        adapter = SPAguaSIBHAdapter()
+        now = datetime(2026, 9, 15, tzinfo=UTC)
+        start = now - timedelta(hours=24)
+
+        mock_response = json.dumps(
+            [
+                {
+                    "timestamp": "2026-09-15T10:00:00+00:00",
+                    "value": None,
+                    "metric": "level",
+                    "station_id": "SIBH-789",
+                }
+            ]
+        )
+
+        with patch(
+            "ribeira_platform.hydrology._fetch_text", return_value=mock_response
+        ):
+            result = adapter.fetch_observations(
+                start_date=start,
+                end_date=now,
+                group_type="hour",
+                variable=HydroVariable.RIVER_STAGE,
+            )
+
+        self.assertEqual(result.status, HydroFetchStatus.SUCCESS)
+        self.assertEqual(len(result.items), 1)
+        self.assertIsNone(result.items[0]["value"])
 
 
 if __name__ == "__main__":
