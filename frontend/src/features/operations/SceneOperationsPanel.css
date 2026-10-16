@@ -1,0 +1,177 @@
+.scene-operations {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.scene-operations h2 {
+  font-size: var(--font-size-h4);
+  font-weight: var(--font-weight-subheader);
+  color: var(--color-text-primary);
+  margin: 0 0 16px;
+}
+
+.scene-operations form {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.scene-operations label {
+  display: grid;
+  font-size: var(--font-size-body-sm);
+  gap: 6px;
+  color: var(--color-text-primary);
+}
+
+.scene-operations input[type="date"] {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-body-sm);
+  cursor: pointer;
+}
+
+.scene-operations input[type="date"]:hover {
+  border-color: var(--color-accent-primary);
+}
+
+.scene-operations button {
+  padding: 10px 16px;
+  background: var(--color-accent-primary);
+  border: 1px solid var(--color-accent-secondary);
+  border-radius: 6px;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-body-sm);
+  font-weight: var(--font-weight-label);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.scene-operations button:hover {
+  background: var(--color-accent-secondary);
+  transform: translateY(-1px);
+}
+
+.scene-operations button:active {
+  transform: translateY(0);
+}
+
+.scene-operations button:disabled {
+  background: var(--color-bg-tertiary);
+  border-color: var(--color-border-light);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+  transform: none;
+}
+
+.scene-operations details {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  margin-top: 16px;
+  overflow: hidden;
+}
+
+.scene-operations summary {
+  cursor: pointer;
+  font-weight: var(--font-weight-subheader);
+  font-size: var(--font-size-body-sm);
+  padding: 12px 16px;
+  background: var(--color-bg-tertiary);
+}
+
+.scene-operations summary::after {
+  content: "▼";
+  float: right;
+  transform: rotate(0deg);
+  transition: transform 0.2s ease;
+}
+
+.scene-operations[open] summary::after {
+  transform: rotate(180deg);
+}
+
+.scene-operations details div {
+  padding: 16px;
+}
+
+.scene-operations .search-results {
+  margin-top: 16px;
+}
+
+.scene-operations .search-results ul {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+}
+
+.scene-operations .search-results li {
+  padding: 12px;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-body-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.scene-operations .search-results li:hover {
+  border-color: var(--color-accent-primary);
+}
+
+.scene-operations .search-results li.selected {
+  background: var(--color-bg-tertiary);
+  border-color: var(--color-accent-primary);
+}
+
+.scene-operations .search-results li strong {
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-subheader);
+}
+
+.scene-operations .search-results li span {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xmicro);
+}
+
+.message-area {
+  padding: 12px 16px;
+  border-radius: 6px;
+  font-size: var(--font-size-body-sm);
+}
+
+.message-area.success {
+  background: rgba(34, 197, 94, 0.1);
+  color: var(--color-accent-success);
+  border: 1px solid var(--color-border-success);
+}
+
+.message-area.error {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--color-accent-error);
+  border: 1px solid var(--color-border-error);
+}
+
+.message-area.warning {
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--color-accent-warning);
+  border: 1px solid var(--color-border-warning);
+}
+
+.empty-state.scene-operations {
+  padding: 24px;
+  text-align: center;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-tertiary);
+  border-radius: 6px;
+}
+
+.empty-state.scene-operations p {
+  margin: 0 0 8px;
+  font-size: var(--font-size-body-sm);
+}
