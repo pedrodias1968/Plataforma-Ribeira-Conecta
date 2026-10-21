@@ -10,4 +10,10 @@ Pacote somente leitura com as vendas, os recebimentos e os custos de um período
 - Valor sem registro continua desconhecido, não zero. Classificação `CALCULATED`, com limitações listadas.
 - Não substitui escrituração contábil nem nota fiscal.
 
-Limites: sem tela nem exportação em arquivo (CSV/PDF) ainda. Teste: `tests/test_accountant_report.py`.
+## Tela e planilha
+
+O painel "Relatório para o contador" na Farm360 pede o período, mostra o resumo e baixa uma planilha CSV
+(separador `;`, decimal com vírgula, abre direto no Excel). Valor sem registro sai como **célula vazia**,
+nunca 0. A planilha é montada no navegador a partir do mesmo relatório, sem outro cálculo.
+
+Limites: sem PDF. Testes: `tests/test_accountant_report.py`, `frontend/src/features/accountant/`.
