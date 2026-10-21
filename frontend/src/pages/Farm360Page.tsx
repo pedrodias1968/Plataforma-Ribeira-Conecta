@@ -36,6 +36,7 @@ import { CostPanel } from "../features/costs/CostPanel";
 import { SalesPanel } from "../features/sales/SalesPanel";
 import { StockPanel } from "../features/stock/StockPanel";
 import { AccountantReportPanel } from "../features/accountant/AccountantReportPanel";
+import { CorrectionsPanel } from "../features/corrections/CorrectionsPanel";
 import { formatHectares } from "../formatting";
 
 interface Props {
@@ -426,6 +427,7 @@ export function Farm360Page({
         <SalesPanel tenantId={tenantId} propertyId={propertyId} apiBaseUrl={apiBaseUrl} token={token} />
         <StockPanel tenantId={tenantId} propertyId={propertyId} apiBaseUrl={apiBaseUrl} token={token} />
         <AccountantReportPanel tenantId={tenantId} propertyId={propertyId} apiBaseUrl={apiBaseUrl} token={token} />
+        <CorrectionsPanel fields={fields} tenantId={tenantId} propertyId={propertyId} apiBaseUrl={apiBaseUrl} token={token} />
         {canRunSatelliteOperations && <SceneOperationsPanel
           api={api}
           tenantId={tenantId}

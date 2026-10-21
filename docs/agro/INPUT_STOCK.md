@@ -24,7 +24,7 @@ Permissões `stock:read` (ANALYST, OPERATOR, TENANT_ADMIN, MANAGER, AGRONOMIST, 
 
 ## Limites conhecidos
 
-- Correção só pela API (o painel da Farm360 registra, mas não corrige).
+- Correção pelo painel “Corrigir um registro” da Farm360 ou pela API (o painel “Corrigir um registro” da Farm360 faz a correção).
 - Sem estoque mínimo/alerta, sem custo médio, sem validade nem lote.
 - Lista de unidades fixa (`KG`, `L`, `UNIT`).
 
