@@ -30,6 +30,7 @@ import { BoundaryImportPanel } from "../features/property/BoundaryImportPanel";
 import { BoundaryEditorPanel } from "../features/property/BoundaryEditorPanel";
 import { DataAvailabilityPanel } from "../features/context/DataAvailabilityPanel";
 import { HydrologyPanel } from "../features/hydrology/HydrologyPanel";
+import { HarvestPanel } from "../features/harvest/HarvestPanel";
 import { formatHectares } from "../formatting";
 
 interface Props {
@@ -414,6 +415,7 @@ export function Farm360Page({
             }
           }}
         />
+        <HarvestPanel fields={fields} tenantId={tenantId} propertyId={propertyId} apiBaseUrl={apiBaseUrl} token={token} />
         {canRunSatelliteOperations && <SceneOperationsPanel
           api={api}
           tenantId={tenantId}
