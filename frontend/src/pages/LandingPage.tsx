@@ -132,6 +132,22 @@ export function LandingPage() {
     if (element) element.scrollIntoView({ behavior: "smooth" });
   };
 
+  const handleContact = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const field = (key: string) => String(data.get(key) ?? "");
+    const body = [
+      `Nome: ${field("name")}`,
+      `E-mail: ${field("email")}`,
+      `Telefone: ${field("phone")}`,
+      "",
+      field("message"),
+    ].join("\n");
+    const subject = `Contato pelo site (${field("profile")})`;
+    window.location.href =
+      `mailto:contato@ribeiraconecta.com.br?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
+
   return (
     <div className="landing-page">
       <header className={`landing-header ${scrolled ? "scrolled" : ""}`}>
@@ -142,11 +158,13 @@ export function LandingPage() {
           <nav className={`nav ${mobileMenuOpen ? "open" : ""}`}>
             <a onClick={() => scrollToSection("hero")}>Início</a>
             <a onClick={() => scrollToSection("problema")}>Problema</a>
+            <a onClick={() => scrollToSection("publicos")}>Para quem</a>
             <a onClick={() => scrollToSection("ecossistema")}>Ecossistema</a>
             <a onClick={() => scrollToSection("geoespacial")}>Geoespacial</a>
             <a onClick={() => scrollToSection("hydrology")}>Hidrologia</a>
             <a onClick={() => scrollToSection("erp")}>ERP Bananicultura</a>
             <a onClick={() => scrollToSection("servicos")}>Serviços</a>
+            <a onClick={() => scrollToSection("transparencia")}>Estágio</a>
             <a onClick={() => scrollToSection("sobre")}>Sobre</a>
             <a onClick={() => scrollToSection("contato")}>Contato</a>
           </nav>
@@ -168,8 +186,9 @@ export function LandingPage() {
           <p className="eyebrow">Conectividade, Inteligência e Gestão</p>
           <h1>do cacho à mesa</h1>
           <p className="subtitle">
-            Plataforma de inteligência territorial para bananicultores do Vale do Ribeira.
-            Monitoramento satelital, risco de inundação e gestão operacional em um só lugar.
+            Plataforma de inteligência territorial e gestão para a cadeia da banana no Vale do Ribeira.
+            Mapa da propriedade, monitoramento por satélite, hidrologia e controle da operação em um só lugar.
+            Para produtores, investidores e parceiros.
           </p>
           <div className="hero-actions">
             <a href="mailto:contato@ribeiraconecta.com.br" className="btn-primary">
@@ -206,8 +225,43 @@ export function LandingPage() {
                 <Icon name="connectivity" className="icon-32" />
               </div>
               <h3>Conectividade Rural</h3>
-              <p>Áreas remotas enfrentam limitações de conectividade que dificultam o acesso a informações em tempo real.</p>
+              <p>Áreas remotas enfrentam limitações de conectividade que dificultam o acesso a informações atualizadas.</p>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="publicos" className="audiences">
+        <div className="container">
+          <h2>Para quem é a Ribeira Conecta</h2>
+          <p className="subtitle">
+            Uma mesma base de dados territorial, com três formas de valor.
+          </p>
+          <div className="audience-grid">
+            <article className="audience-card">
+              <h3>Produtores</h3>
+              <p>
+                Veja a propriedade no mapa, acompanhe a vegetação por satélite e o nível dos rios,
+                e registre colheita, adubação, custos e vendas por talhão.
+              </p>
+              <a href="#erp" className="audience-link">Ver o ERP da banana</a>
+            </article>
+            <article className="audience-card">
+              <h3>Investidores</h3>
+              <p>
+                Produto em construção com base técnica auditável: dados separados por produtor,
+                registros que não são apagados e um painel público do que já funciona e do que ainda não.
+              </p>
+              <a href="#transparencia" className="audience-link">Ver o estágio atual</a>
+            </article>
+            <article className="audience-card">
+              <h3>Parceiros</h3>
+              <p>
+                Cooperativas, associações, consultorias e empresas de conectividade e insumos:
+                dados territoriais compartilhados com permissão do produtor, a partir de fontes oficiais abertas.
+              </p>
+              <a href="#contato" className="audience-link">Propor uma parceria</a>
+            </article>
           </div>
         </div>
       </section>
@@ -226,14 +280,14 @@ export function LandingPage() {
               </div>
               <h3>Conectividade Rural</h3>
               <p>Soluções de conectividade para áreas remotas do Vale do Ribeira.</p>
-              <StatusBadge status="disponivel" label="Disponível" />
+              <StatusBadge status="planejado" label="Em planejamento" />
             </div>
             <div className="ecosystem-item">
               <div className="ecosystem-icon">
                 <Icon name="satellite" className="icon-48" />
               </div>
               <h3>Monitoramento Satelital</h3>
-              <p>Observação contínua da vegetação, solo e condições ambientais.</p>
+              <p>Acompanhamento periódico da vegetação por imagens de satélite.</p>
               <StatusBadge status="disponivel" label="Disponível" />
             </div>
             <div className="ecosystem-item">
@@ -274,7 +328,7 @@ export function LandingPage() {
               </div>
               <h3>Serviços Profissionais</h3>
               <p>Consultoria especializada em inteligência territorial agrícola.</p>
-              <StatusBadge status="disponivel" label="Disponível" />
+              <StatusBadge status="planejado" label="Sob consulta" />
             </div>
           </div>
         </div>
@@ -282,15 +336,14 @@ export function LandingPage() {
 
       <section id="geoespacial" className="geospatial">
         <div className="container">
-          <h2>Geoespacial de classe Google Earth</h2>
+          <h2>Mapa da propriedade, no estilo WebGIS</h2>
           <p className="subtitle">
-            Plataforma geoespacial com capacidades avançadas para visualização e análise territorial.
-            Não uma cópia, mas uma solução focada em operação agrícola.
+            Mapa interativo com limites, talhões e camadas de satélite, pensado para a rotina da propriedade rural.
           </p>
           <div className="geospatial-grid">
             <div className="geospatial-feature">
               <Icon name="map" className="icon-32" />
-              <h3>Mapa 2D e 3D</h3>
+              <h3>Mapa interativo</h3>
               <p>Visualização interativa do território com camadas geoespaciais.</p>
               <StatusBadge status="disponivel" label="Disponível" />
             </div>
@@ -324,7 +377,7 @@ export function LandingPage() {
         <div className="container">
           <h2>Hidrologia e monitoramento de rios</h2>
           <p className="subtitle">
-            Integração com fontes oficiais para monitoramento contínuo de nível de rios,
+            Integração com fontes oficiais para acompanhar o nível de rios,
             pluviometria e vazão.
           </p>
           <div className="hydrology-info">
@@ -344,7 +397,7 @@ export function LandingPage() {
                 <h3>Pluviometria</h3>
               </div>
               <p>
-                Dados de chuva em tempo real de estações automatizadas da região.
+                Dados de chuva de estações oficiais da região, quando disponíveis.
                 <StatusBadge status="disponivel" label="Disponível" />
               </p>
             </div>
@@ -417,6 +470,21 @@ export function LandingPage() {
         </div>
       </section>
 
+      <section id="transparencia" className="transparency">
+        <div className="container">
+          <h2>Em que estágio estamos</h2>
+          <p className="subtitle">
+            Preferimos mostrar o que existe de verdade. Os selos desta página seguem o estado real do desenvolvimento.
+          </p>
+          <ul className="stage-list">
+            <li><StatusBadge status="disponivel" label="Funcionando" /> Cadastro de propriedade e talhões, mapa, índice de vegetação por satélite e painel de hidrologia.</li>
+            <li><StatusBadge status="em-desenvolvimento" label="Em desenvolvimento" /> ERP da banana: colheita, adubação, estoque, custos, vendas e relatório para o contador.</li>
+            <li><StatusBadge status="planejado" label="Em planejamento" /> Conectividade rural e serviços de campo.</li>
+          </ul>
+          <p className="stage-note">Piloto em andamento em propriedade produtora do Vale do Ribeira.</p>
+        </div>
+      </section>
+
       <section id="sobre" className="about">
         <div className="container">
           <h2>Sobre a Ribeira Conecta</h2>
@@ -455,7 +523,7 @@ export function LandingPage() {
               contato@ribeiraconecta.com.br
             </a>
           </div>
-          <form className="contact-form">
+          <form className="contact-form" onSubmit={handleContact}>
             <div className="form-group">
               <label htmlFor="name">Nome</label>
               <input type="text" id="name" name="name" required />
@@ -463,6 +531,15 @@ export function LandingPage() {
             <div className="form-group">
               <label htmlFor="email">E-mail</label>
               <input type="email" id="email" name="email" required />
+            </div>
+            <div className="form-group">
+              <label htmlFor="profile">Eu sou</label>
+              <select id="profile" name="profile" defaultValue="Produtor">
+                <option>Produtor</option>
+                <option>Investidor</option>
+                <option>Parceiro</option>
+                <option>Outro</option>
+              </select>
             </div>
             <div className="form-group">
               <label htmlFor="phone">Telefone</label>
