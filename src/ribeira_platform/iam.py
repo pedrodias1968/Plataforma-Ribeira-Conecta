@@ -235,6 +235,21 @@ for _role in ("ANALYST", "TENANT_ADMIN", "MANAGER"):
 for _role in ("TENANT_ADMIN", "MANAGER"):
     ROLE_PERMISSIONS[_role] = ROLE_PERMISSIONS[_role] | frozenset({_SALE_WRITE})
 
+# Input stock is operational data, like harvest: the foreman can record it.
+_STOCK_READ = "stock:read"
+_STOCK_WRITE = "stock:write"
+for _role in (
+    "ANALYST",
+    "OPERATOR",
+    "TENANT_ADMIN",
+    "MANAGER",
+    "AGRONOMIST",
+    "TECHNICIAN",
+):
+    ROLE_PERMISSIONS[_role] = ROLE_PERMISSIONS[_role] | frozenset({_STOCK_READ})
+for _role in ("OPERATOR", "TENANT_ADMIN", "MANAGER", "AGRONOMIST", "TECHNICIAN"):
+    ROLE_PERMISSIONS[_role] = ROLE_PERMISSIONS[_role] | frozenset({_STOCK_WRITE})
+
 
 class AuthenticationError(PermissionError):
     def __init__(

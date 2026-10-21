@@ -63,6 +63,7 @@ from .models import (
 from .field_context import FieldBoundaryConflict
 from .costs import CostConflict
 from .sales import SalesConflict
+from .stock import StockConflict
 from .fertilization import FertilizationConflict
 from .harvest import HarvestConflict
 from .object_storage import ObjectStorageError
@@ -355,6 +356,28 @@ class PaymentBody(BaseModel):
     source_reference: str = Field(min_length=1, max_length=500)
     classification: DataClassification = DataClassification.MANUAL_CONFIRMED
     notes: str | None = Field(default=None, max_length=2000)
+
+
+class StockBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    movement_date: str = Field(min_length=10, max_length=10)
+    movement_type: str = Field(pattern=r"^(IN|OUT)$")
+    item_name: str = Field(min_length=1, max_length=200)
+    unit: str = Field(pattern=r"^(KG|L|UNIT)$")
+    quantity: float = Field(gt=0)
+    counterparty: str | None = Field(default=None, max_length=200)
+    recorded_by: str = Field(min_length=1, max_length=200)
+    source_reference: str = Field(min_length=1, max_length=500)
+    classification: DataClassification = DataClassification.MANUAL_CONFIRMED
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class StockRequest(StockBody):
+    pass
+
+
+class StockCorrectionRequest(StockBody):
+    correction_reason: str = Field(min_length=1, max_length=1000)
 
 
 class PaymentRequest(PaymentBody):
@@ -958,6 +981,13 @@ def create_app(
         return JSONResponse(
             status_code=409,
             content={"error": {"code": "SALES_CONFLICT", "message": str(exc)}},
+        )
+
+    @app.exception_handler(StockConflict)
+    async def stock_conflict(_: Request, exc: StockConflict):
+        return JSONResponse(
+            status_code=409,
+            content={"error": {"code": "STOCK_CONFLICT", "message": str(exc)}},
         )
 
     @app.get("/health/live", tags=["health"])
@@ -2412,6 +2442,92 @@ def create_app(
             property_id,
             date_from=date_from,
             date_to=date_to,
+            as_of=as_of,
+            platform_admin=ctx.is_platform_admin,
+        )
+
+    @app.post(
+        "/v1/tenants/{tenant_id}/properties/{property_id}/stock-movements",
+        status_code=201,
+        tags=["farm-360", "stock"],
+    )
+    async def create_stock_movement(
+        tenant_id: str,
+        property_id: str,
+        payload: StockRequest,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "stock:write", tenant_id)
+        item = application.register_stock_movement(
+            tenant_id,
+            property_id,
+            **payload.model_dump(),
+            actor=ctx.subject,
+            platform_admin=ctx.is_platform_admin,
+        )
+        return safe_harvest(item)
+
+    @app.get(
+        "/v1/tenants/{tenant_id}/properties/{property_id}/stock-movements",
+        tags=["farm-360", "stock"],
+    )
+    async def list_stock_movements(
+        tenant_id: str,
+        property_id: str,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        include_superseded: bool = False,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "stock:read", tenant_id)
+        items = application.list_stock_movements(
+            tenant_id,
+            property_id,
+            date_from=date_from,
+            date_to=date_to,
+            include_superseded=include_superseded,
+            platform_admin=ctx.is_platform_admin,
+        )
+        return {
+            "property_id": property_id,
+            "items": [safe_harvest(item) for item in items],
+        }
+
+    @app.post(
+        "/v1/tenants/{tenant_id}/stock-movements/{movement_id}/corrections",
+        status_code=201,
+        tags=["farm-360", "stock"],
+    )
+    async def correct_stock_movement(
+        tenant_id: str,
+        movement_id: str,
+        payload: StockCorrectionRequest,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "stock:write", tenant_id)
+        item = application.correct_stock_movement(
+            tenant_id,
+            movement_id,
+            **payload.model_dump(),
+            actor=ctx.subject,
+            platform_admin=ctx.is_platform_admin,
+        )
+        return safe_harvest(item)
+
+    @app.get(
+        "/v1/tenants/{tenant_id}/properties/{property_id}/stock-summary",
+        tags=["farm-360", "stock"],
+    )
+    async def stock_summary(
+        tenant_id: str,
+        property_id: str,
+        as_of: str | None = None,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "stock:read", tenant_id)
+        return application.stock_summary(
+            tenant_id,
+            property_id,
             as_of=as_of,
             platform_admin=ctx.is_platform_admin,
         )
