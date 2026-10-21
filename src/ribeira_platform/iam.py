@@ -200,6 +200,23 @@ for _role in (
 for _role in ("OPERATOR", "TENANT_ADMIN", "MANAGER", "AGRONOMIST", "TECHNICIAN"):
     ROLE_PERMISSIONS[_role] = ROLE_PERMISSIONS[_role] | frozenset({_HARVEST_WRITE})
 
+# Fertilization and input records follow the same roles as harvest records.
+_FERTILIZATION_READ = "fertilization:read"
+_FERTILIZATION_WRITE = "fertilization:write"
+for _role in (
+    "ANALYST",
+    "OPERATOR",
+    "TENANT_ADMIN",
+    "MANAGER",
+    "AGRONOMIST",
+    "TECHNICIAN",
+):
+    ROLE_PERMISSIONS[_role] = ROLE_PERMISSIONS[_role] | frozenset({_FERTILIZATION_READ})
+for _role in ("OPERATOR", "TENANT_ADMIN", "MANAGER", "AGRONOMIST", "TECHNICIAN"):
+    ROLE_PERMISSIONS[_role] = ROLE_PERMISSIONS[_role] | frozenset(
+        {_FERTILIZATION_WRITE}
+    )
+
 
 class AuthenticationError(PermissionError):
     def __init__(
