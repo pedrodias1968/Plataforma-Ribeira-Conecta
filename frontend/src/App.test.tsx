@@ -18,6 +18,10 @@ describe("App site mode", () => {
 
   it("keeps the authenticated app (and its config check) outside landing mode", async () => {
     vi.stubEnv("VITE_RIBEIRA_SITE_MODE", "");
+    vi.stubEnv("VITE_RIBEIRA_AUTH_MODE", "development");
+    vi.stubEnv("VITE_RIBEIRA_PUBLIC_ORIGIN", "");
+    vi.stubEnv("VITE_RIBEIRA_API_URL", "");
+    vi.stubEnv("VITE_RIBEIRA_TENANT_ID", "");
     const { default: App } = await import("./App");
     render(<App />);
     expect(screen.getByText(/Configuração/)).toBeInTheDocument();
