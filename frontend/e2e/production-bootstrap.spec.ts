@@ -7,7 +7,7 @@ const bootstrapFailures = [
   "Modo de autenticação inválido.",
 ];
 
-test("production candidate boots an OIDC application shell", async ({ page }) => {
+test("production candidate boots the public landing with an OIDC login entry", async ({ page }) => {
   const scriptResponses: string[] = [];
   page.on("response", response => {
     if (/\/assets\/index-.*\.js(?:\?|$)/.test(response.url())) {
@@ -19,6 +19,9 @@ test("production candidate boots an OIDC application shell", async ({ page }) =>
   for (const failure of bootstrapFailures) {
     await expect(page.getByText(failure, { exact: true })).toHaveCount(0);
   }
-  await expect(page.getByRole("button", { name: "Entrar" })).toBeVisible();
+  // Em "/" aparece a landing pública; o login começa pelo link Entrar (/?entrar=1).
+  const login = page.getByRole("link", { name: "Entrar" }).first();
+  await expect(login).toBeVisible();
+  await expect(login).toHaveAttribute("href", "/?entrar=1");
   expect(scriptResponses.some(item => item.startsWith("200:") && /javascript/i.test(item))).toBe(true);
 });
