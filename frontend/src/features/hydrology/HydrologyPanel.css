@@ -1,0 +1,104 @@
+.hydrology-panel {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.hydrology-panel h2 {
+  font-size: var(--font-size-h4);
+  font-weight: var(--font-weight-subheader);
+  color: var(--color-text-primary);
+  margin: 0 0 16px;
+}
+
+.hydrology-panel p {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-body-sm);
+  line-height: var(--line-height-body);
+  margin-bottom: 16px;
+}
+
+.hydrology-panel .observation {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 12px;
+  background: var(--color-bg-primary);
+}
+
+.hydrology-panel .observation h3 {
+  font-size: var(--font-size-body-sm);
+  font-weight: var(--font-weight-subheader);
+  color: var(--color-text-primary);
+  margin: 0 0 8px;
+}
+
+.hydrology-panel .observation dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin-bottom: 8px;
+}
+
+.hydrology-panel .observation dt {
+  font-size: var(--font-size-body-xs);
+  color: var(--color-text-secondary);
+}
+
+.hydrology-panel .observation dd {
+  font-size: var(--font-size-body-sm);
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.hydrology-panel .observation .status {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  font-size: var(--font-size-xmicro);
+  font-weight: var(--font-weight-header);
+  border-radius: 999px;
+}
+
+.hydrology-panel .observation .status.success {
+  background: rgba(34, 197, 94, 0.1);
+  color: var(--color-accent-success);
+}
+
+.hydrology-panel .observation .status.warning {
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--color-accent-warning);
+}
+
+.hydrology-panel .observation .status.error {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--color-accent-error);
+}
+
+.hydrology-panel .observation .status.pending {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-muted);
+}
+
+.hydrology-panel .error {
+  padding: 16px;
+  text-align: center;
+  color: var(--color-accent-error);
+  background: rgba(239, 68, 68, 0.05);
+  border-radius: 6px;
+  border: 1px solid var(--color-border-error);
+}
+
+.empty-state.hydrology {
+  padding: 24px;
+  text-align: center;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-tertiary);
+  border-radius: 6px;
+}
+
+.empty-state.hydrology p {
+  margin: 0 0 8px;
+  font-size: var(--font-size-body-sm);
+}

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
+from threading import RLock
 from typing import Any, Iterable
 
 import psycopg
@@ -14,11 +16,14 @@ from .models import (
     Alert,
     Decision,
     Evidence,
+    BoundaryImport,
     Observation,
+    PilotFeedback,
     Property,
     RuleDefinition,
     Source,
     Tenant,
+    new_id,
 )
 
 
@@ -31,24 +36,34 @@ class PostgresStore:
     """
 
     def __init__(self, dsn: str) -> None:
+        # Kept only by the private process so it can open a separate
+        # short-lived connection for worker heartbeats. It is never exposed
+        # through an API response or log record.
+        self.dsn = dsn
         self.connection = psycopg.connect(dsn, row_factory=dict_row)
         self._transaction_depth = 0
+        # A production API keeps one store per process. FastAPI may execute
+        # synchronous dependencies in different worker threads, so transaction
+        # depth and PostgreSQL session-local RLS settings must never overlap on
+        # this single connection.
+        self._transaction_lock = RLock()
 
     def close(self) -> None:
         self.connection.close()
 
     @contextmanager
     def transaction(self):
-        outer = self._transaction_depth > 0
-        self._transaction_depth += 1
-        try:
-            if outer:
-                yield self
-            else:
-                with self.connection.transaction():
+        with self._transaction_lock:
+            outer = self._transaction_depth > 0
+            self._transaction_depth += 1
+            try:
+                if outer:
                     yield self
-        finally:
-            self._transaction_depth -= 1
+                else:
+                    with self.connection.transaction():
+                        yield self
+            finally:
+                self._transaction_depth -= 1
 
     @contextmanager
     def tenant_transaction(self, tenant_id: str | None, platform_admin: bool = False):
@@ -63,8 +78,1188 @@ class PostgresStore:
             yield self
 
     def ready(self) -> bool:
-        row = self.connection.execute("SELECT 1 AS ready").fetchone()
+        # psycopg starts a transaction for SELECT when autocommit is disabled.
+        # Health probes must close it, otherwise a long-lived API connection can
+        # retain relation locks as ``idle in transaction``.
+        with self.transaction():
+            row = self.connection.execute("SELECT 1 AS ready").fetchone()
         return row is not None and row["ready"] == 1
+
+    def upsert_source_health(
+        self,
+        provider: str,
+        status: str,
+        *,
+        last_attempt: str | None = None,
+        last_success: str | None = None,
+        last_observation: str | None = None,
+        latency_seconds: float | None = None,
+        failure_code: str | None = None,
+        failure_detail_sanitized: str | None = None,
+    ) -> None:
+        """Persist global provider health without credentials or response bodies."""
+        self.connection.execute(
+            """INSERT INTO source_health(
+                   provider,status,last_attempt,last_success,last_observation,
+                   latency_seconds,failure_code,failure_detail_sanitized
+                 ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                 ON CONFLICT (provider) DO UPDATE SET
+                   status=EXCLUDED.status,last_attempt=EXCLUDED.last_attempt,
+                   last_success=COALESCE(EXCLUDED.last_success,source_health.last_success),
+                   last_observation=COALESCE(EXCLUDED.last_observation,source_health.last_observation),
+                   latency_seconds=EXCLUDED.latency_seconds,failure_code=EXCLUDED.failure_code,
+                   failure_detail_sanitized=EXCLUDED.failure_detail_sanitized,updated_at=now()""",
+            (
+                provider,
+                status,
+                last_attempt,
+                last_success,
+                last_observation,
+                latency_seconds,
+                failure_code,
+                failure_detail_sanitized,
+            ),
+        )
+
+    def upsert_reservoir(
+        self,
+        *,
+        provider: str,
+        provider_reservoir_id: str,
+        name: str,
+        river_name: str | None,
+    ) -> str:
+        row = self.connection.execute(
+            """INSERT INTO reservoir(id,provider,provider_reservoir_id,name,river_name)
+                 VALUES (%s,%s,%s,%s,%s)
+                 ON CONFLICT (provider,provider_reservoir_id) DO UPDATE
+                   SET name=EXCLUDED.name,river_name=EXCLUDED.river_name
+                 RETURNING id""",
+            (new_id(), provider, provider_reservoir_id, name, river_name),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("reservoir upsert did not return an identifier")
+        return self._id(row["id"])
+
+    def record_reservoir_operation_event(self, event: Any) -> bool:
+        reservoir_id = self.upsert_reservoir(
+            provider="COPEL",
+            provider_reservoir_id=event.reservoir_provider_id,
+            name=event.reservoir_name,
+            river_name=event.river_name,
+        )
+        row = self.connection.execute(
+            """INSERT INTO reservoir_operation_event(
+                   id,reservoir_id,provider,event_type,published_at,effective_at,
+                   numeric_value,unit,description_sanitized,source_reference,
+                   classification,provenance
+                 ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
+                 ON CONFLICT (provider,source_reference,event_type) DO NOTHING
+                 RETURNING id""",
+            (
+                new_id(),
+                reservoir_id,
+                "COPEL",
+                event.event_type,
+                event.published_at,
+                event.effective_at,
+                event.numeric_value,
+                event.unit,
+                event.description_sanitized,
+                event.source_reference,
+                event.classification,
+                json.dumps(
+                    {
+                        "parser": "copel_capivari_notice_v1",
+                        "classification": event.classification,
+                    }
+                ),
+            ),
+        ).fetchone()
+        return row is not None
+
+    def record_climate_context(self, context: Any, *, fetched_at: str) -> bool:
+        row = self.connection.execute(
+            """INSERT INTO climate_context(
+                   id,provider,issued_on,valid_window,enso_state,probability,
+                   strength_category,source_reference,classification,source_fetched_at,provenance
+                 ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
+                 ON CONFLICT (provider,issued_on,enso_state,source_reference) DO NOTHING
+                 RETURNING id""",
+            (
+                new_id(),
+                context.provider,
+                context.issued_on,
+                context.valid_window,
+                context.enso_state,
+                context.probability,
+                context.strength_category,
+                context.source_reference,
+                context.classification,
+                fetched_at,
+                json.dumps(
+                    {
+                        "parser": "noaa_cpc_enso_v1",
+                        "classification": context.classification,
+                    }
+                ),
+            ),
+        ).fetchone()
+        return row is not None
+
+    @staticmethod
+    def _scope_name(value: str) -> str:
+        import unicodedata
+
+        return " ".join(
+            unicodedata.normalize("NFKD", value)
+            .encode("ascii", "ignore")
+            .decode("ascii")
+            .casefold()
+            .split()
+        )
+
+    def derive_verified_semil_scope(self) -> int:
+        """Persist the official municipality membership and IBGE-derived shape.
+
+        This deliberately touches only the verified administrative SEMIL
+        definition.  The separate hydrological-basin scope remains UNKNOWN.
+        """
+        definition = self.connection.execute(
+            """SELECT id,geographic_scope_id,municipality_criteria
+                 FROM spatial_scope_definition
+                WHERE id=%s AND definition_status='VERIFIED'""",
+            ("00000000-0000-5000-8000-000000000211",),
+        ).fetchone()
+        if definition is None:
+            raise RuntimeError("verified SEMIL scope definition is missing")
+        expected = definition["municipality_criteria"]
+        if not isinstance(expected, list) or not expected:
+            raise RuntimeError("verified SEMIL municipality definition is missing")
+        municipalities = self.connection.execute(
+            """SELECT id,name FROM municipality_reference
+                 WHERE uf='SP' AND source_year=2025"""
+        ).fetchall()
+        by_name = {
+            self._scope_name(str(row["name"])): row["id"] for row in municipalities
+        }
+        missing = [
+            name for name in expected if self._scope_name(str(name)) not in by_name
+        ]
+        if missing:
+            raise RuntimeError(
+                "official SEMIL municipality definition cannot be joined to IBGE 2025"
+            )
+        scope_id = definition["geographic_scope_id"]
+        ids = [by_name[self._scope_name(str(name))] for name in expected]
+        for municipality_id in ids:
+            self.connection.execute(
+                """INSERT INTO spatial_scope_municipality(
+                       geographic_scope_id,municipality_id,definition_id,classification
+                     ) VALUES (%s,%s,%s,'OFFICIAL_SOURCE')
+                     ON CONFLICT DO NOTHING""",
+                (scope_id, municipality_id, definition["id"]),
+            )
+        self.connection.execute(
+            """UPDATE geographic_scope AS scope
+                   SET geometry=derived.geometry,
+                       geometry_status='VERIFIED',
+                       metadata=scope.metadata || jsonb_build_object(
+                         'geometry_source','IBGE_MUNICIPAL_2025',
+                         'geometry_method','union_of_verified_SEMIL_municipalities'
+                       ),
+                       updated_at=now()
+                  FROM (
+                    SELECT ST_Multi(ST_UnaryUnion(ST_Collect(ST_Transform(m.geometry,4326)))) AS geometry
+                      FROM spatial_scope_municipality sm
+                      JOIN municipality_reference m ON m.id=sm.municipality_id
+                     WHERE sm.geographic_scope_id=%s
+                  ) AS derived
+                 WHERE scope.id=%s AND derived.geometry IS NOT NULL""",
+            (scope_id, scope_id),
+        )
+        return len(ids)
+
+    def vale_scope_envelope(
+        self, *, buffer_degrees: float = 0.25
+    ) -> tuple[float, float, float, float]:
+        if buffer_degrees < 0 or buffer_degrees > 1:
+            raise ValueError("scope buffer must be between zero and one degree")
+        row = self.connection.execute(
+            """SELECT ST_XMin(envelope) AS xmin,ST_YMin(envelope) AS ymin,
+                      ST_XMax(envelope) AS xmax,ST_YMax(envelope) AS ymax
+                 FROM (
+                   SELECT ST_Envelope(geometry) AS envelope FROM geographic_scope
+                    WHERE scope_key='VALE_DO_RIBEIRA_SP_SEMIL'
+                      AND geometry_status='VERIFIED' AND geometry IS NOT NULL
+                 ) AS bounded"""
+        ).fetchone()
+        if row is None or any(
+            row[key] is None for key in ("xmin", "ymin", "xmax", "ymax")
+        ):
+            raise RuntimeError("verified Vale administrative geometry is unavailable")
+        return (
+            float(row["xmin"]) - buffer_degrees,
+            float(row["ymin"]) - buffer_degrees,
+            float(row["xmax"]) + buffer_degrees,
+            float(row["ymax"]) + buffer_degrees,
+        )
+
+    def station_scope_relation(
+        self, *, longitude: float, latitude: float, buffer_meters: float = 25_000
+    ) -> str:
+        row = self.connection.execute(
+            """SELECT CASE
+                     WHEN ST_Intersects(
+                       scope.geometry,ST_SetSRID(ST_MakePoint(%s,%s),4326)
+                     ) THEN 'INSIDE_VERIFIED_SCOPE'
+                     WHEN ST_DWithin(
+                       scope.geometry::geography,
+                       ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography,%s
+                     ) THEN 'NEAR_SCOPE_BUFFER'
+                     ELSE 'OUTSIDE_SCOPE'
+                   END AS relation
+                 FROM geographic_scope scope
+                WHERE scope.scope_key='VALE_DO_RIBEIRA_SP_SEMIL'
+                  AND scope.geometry_status='VERIFIED'""",
+            (longitude, latitude, longitude, latitude, buffer_meters),
+        ).fetchone()
+        return str(row["relation"]) if row else "OUTSIDE_SCOPE"
+
+    def upsert_wis2_station(self, item: Any, *, relation: str) -> str:
+        row = self.connection.execute(
+            """INSERT INTO hydrological_station(
+                   id,provider,provider_station_id,name,station_type,latitude,longitude,
+                   active_status,metadata
+                 ) VALUES (%s,'INMET_WIS2',%s,%s,'SYNOP',%s,%s,'ACTIVE',%s::jsonb)
+                 ON CONFLICT (provider,provider_station_id) DO UPDATE
+                   SET name=EXCLUDED.name,latitude=EXCLUDED.latitude,
+                       longitude=EXCLUDED.longitude,
+                       metadata=hydrological_station.metadata || EXCLUDED.metadata,
+                       updated_at=now()
+                 RETURNING id""",
+            (
+                new_id(),
+                item.wigos_station_identifier,
+                item.station_name[:500],
+                item.latitude,
+                item.longitude,
+                json.dumps(
+                    {
+                        "geometry_source": "INMET_WIS2_FEATURE",
+                        "scope_relation": relation,
+                    }
+                ),
+            ),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("WIS2 station upsert did not return an identifier")
+        return self._id(row["id"])
+
+    def record_wis2_rain(
+        self, item: Any, *, station_id: str, fetched_at: datetime
+    ) -> bool:
+        existing = self.connection.execute(
+            """SELECT 1 FROM hydrological_observation
+                 WHERE provider='INMET_WIS2' AND provider_record_id=%s""",
+            (item.provider_record_id,),
+        ).fetchone()
+        row = self.connection.execute(
+            """INSERT INTO hydrological_observation(
+                   id,station_id,provider,variable,observed_at,received_at,value,unit,
+                   quality_flag,classification,raw_reference,source_fetched_at,parser_version,
+                   period_start,period_end,provider_record_id,delivery_channel,raw_unit,
+                   normalized_value,normalized_unit,provenance
+                 ) VALUES (
+                   %s,%s,'INMET_WIS2','RAINFALL',%s,%s,%s,%s,'VALID','OFFICIAL_SOURCE',
+                   %s,%s,'inmet_wis2_http_v1',%s,%s,%s,'HTTP_OGC_API',%s,%s,'mm',%s::jsonb
+                 ) ON CONFLICT (station_id,variable,observed_at,provider) DO UPDATE
+                   SET received_at=EXCLUDED.received_at,raw_reference=EXCLUDED.raw_reference,
+                       source_fetched_at=EXCLUDED.source_fetched_at,
+                       provider_record_id=EXCLUDED.provider_record_id,
+                       period_start=EXCLUDED.period_start,period_end=EXCLUDED.period_end,
+                       raw_unit=EXCLUDED.raw_unit,normalized_value=EXCLUDED.normalized_value,
+                       normalized_unit=EXCLUDED.normalized_unit,provenance=EXCLUDED.provenance
+                 RETURNING (xmax = 0) AS inserted""",
+            (
+                new_id(),
+                station_id,
+                item.period_end,
+                item.report_time,
+                item.raw_value,
+                item.raw_unit,
+                item.source_url,
+                fetched_at,
+                item.period_start,
+                item.period_end,
+                item.provider_record_id,
+                item.raw_unit,
+                item.normalized_mm,
+                json.dumps(
+                    {
+                        "provider_record_id": item.provider_record_id,
+                        "wigos_station_identifier": item.wigos_station_identifier,
+                        "delivery_channel": "HTTP_OGC_API",
+                        "raw_classification": "OFFICIAL_SOURCE",
+                        "normalization": {
+                            "classification": "CALCULATED",
+                            "method": "1 kg m-2 equals 1 mm liquid-water equivalent",
+                        },
+                    }
+                ),
+            ),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("WIS2 observation upsert did not return a row")
+        return existing is None
+
+    def semil_municipality_codes(self) -> list[str]:
+        rows = self.connection.execute(
+            """SELECT m.ibge_code
+                 FROM spatial_scope_municipality sm
+                 JOIN municipality_reference m ON m.id=sm.municipality_id
+                 JOIN geographic_scope s ON s.id=sm.geographic_scope_id
+                WHERE s.scope_key='VALE_DO_RIBEIRA_SP_SEMIL'
+                ORDER BY m.ibge_code"""
+        ).fetchall()
+        return [str(row["ibge_code"]) for row in rows]
+
+    def wis2_ingestion_counts(self) -> tuple[int, int]:
+        stations = self.connection.execute(
+            "SELECT count(*) AS count FROM hydrological_station WHERE provider='INMET_WIS2'"
+        ).fetchone()
+        observations = self.connection.execute(
+            "SELECT count(*) AS count FROM hydrological_observation WHERE provider='INMET_WIS2' AND variable='RAINFALL'"
+        ).fetchone()
+        if stations is None or observations is None:
+            raise RuntimeError("WIS2 count query returned no row")
+        return int(stations["count"]), int(observations["count"])
+
+    def wis2_station_identifiers(self) -> list[str]:
+        rows = self.connection.execute(
+            """SELECT provider_station_id FROM hydrological_station
+                 WHERE provider='INMET_WIS2' ORDER BY provider_station_id"""
+        ).fetchall()
+        return [str(row["provider_station_id"]) for row in rows]
+
+    def banana_baseline_count(self) -> int:
+        row = self.connection.execute(
+            "SELECT count(*) AS count FROM banana_municipal_baseline WHERE crop='BANANA'"
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("banana baseline count query returned no row")
+        return int(row["count"])
+
+    def wis2_station_rainfall_aggregates(self) -> dict[str, dict[str, Any]]:
+        """Coverage-aware aggregates for the freshest local station series.
+
+        A regional total is intentionally not produced: summing rainfall from
+        different stations would be a misleading spatial estimate.  Values
+        are exposed only when the exact hourly interval coverage is complete.
+        """
+        selected = self.connection.execute(
+            """SELECT station_id,max(period_end) AS latest
+                 FROM hydrological_observation
+                WHERE provider='INMET_WIS2' AND variable='RAINFALL'
+                GROUP BY station_id
+                ORDER BY max(period_end) DESC, count(*) DESC LIMIT 1"""
+        ).fetchone()
+        if selected is None:
+            return {
+                f"{hours}h": {
+                    "status": "INCOMPLETE_COVERAGE",
+                    "value": None,
+                    "expected_intervals": hours,
+                    "observed_intervals": 0,
+                    "coverage_ratio": 0.0,
+                }
+                for hours in (1, 3, 6, 12, 24, 48, 72)
+            }
+        aggregates: dict[str, dict[str, Any]] = {}
+        for hours in (1, 3, 6, 12, 24, 48, 72):
+            row = self.connection.execute(
+                """SELECT count(DISTINCT period_end) AS observed,
+                          sum(normalized_value) AS value
+                     FROM hydrological_observation
+                    WHERE station_id=%s AND provider='INMET_WIS2'
+                      AND variable='RAINFALL' AND period_end > %s - (%s * interval '1 hour')
+                      AND period_end <= %s
+                      AND period_start = period_end - interval '1 hour'""",
+                (selected["station_id"], selected["latest"], hours, selected["latest"]),
+            ).fetchone()
+            observed = int(row["observed"]) if row else 0
+            complete = observed == hours
+            aggregates[f"{hours}h"] = {
+                "status": "AVAILABLE" if complete else "INCOMPLETE_COVERAGE",
+                "value": float(row["value"])
+                if complete and row and row["value"] is not None
+                else None,
+                "expected_intervals": hours,
+                "observed_intervals": observed,
+                "coverage_ratio": observed / hours,
+                "classification": "CALCULATED" if complete else "UNKNOWN",
+            }
+        return aggregates
+
+    def wis2_operational_quality_summary(self) -> dict[str, Any]:
+        """Keep intentional filtering distinct from source-data rejection."""
+        row = self.connection.execute(
+            """SELECT COALESCE(sum(observations_received),0) AS received,
+                      COALESCE(sum(observations_received-observations_ignored),0) AS target_candidates,
+                      COALESCE(sum(observations_inserted),0) AS inserted,
+                      COALESCE(sum(duplicates_ignored),0) AS duplicates,
+                      COALESCE(sum(observations_ignored),0) AS ignored,
+                      COALESCE(sum(invalid_observations),0) AS invalid
+                 FROM hydro_ingestion_run WHERE provider='INMET_WIS2'"""
+        ).fetchone()
+        reasons = self.connection.execute(
+            """SELECT key,sum(value::integer) AS count
+                 FROM hydro_ingestion_run CROSS JOIN LATERAL jsonb_each_text(quality_reason_counts)
+                WHERE provider='INMET_WIS2' GROUP BY key ORDER BY key"""
+        ).fetchall()
+        if row is None:
+            raise RuntimeError("WIS2 quality summary query returned no row")
+        return {
+            **{key: int(row[key]) for key in row},
+            "invalid_reason_counts": {
+                str(item["key"]): int(item["count"]) for item in reasons
+            },
+            "coverage_semantics": "phenomenonTime hourly intervals; not reportTime wall-clock assumptions",
+        }
+
+    def upsert_banana_baseline(
+        self,
+        *,
+        municipality_code: str,
+        values: dict[str, Any],
+        metadata: Any,
+        source_reference: str,
+    ) -> bool:
+        municipality = self.connection.execute(
+            """SELECT id FROM municipality_reference
+                WHERE ibge_code=%s AND source_year=2025""",
+            (municipality_code,),
+        ).fetchone()
+        if municipality is None:
+            raise ValueError(
+                "SIDRA municipality is outside the verified 2025 reference"
+            )
+        numbers = values["numbers"]
+        row = self.connection.execute(
+            """INSERT INTO banana_municipal_baseline(
+                   id,municipality_id,reference_year,crop,area_planted_or_destined,
+                   area_harvested,production_quantity,average_yield,production_value,
+                   units,source_reference,classification,classification_id,
+                   classification_label,category_id,category_label,raw_values,data_status
+                 ) VALUES (%s,%s,%s,'BANANA',%s,%s,%s,%s,%s,%s::jsonb,%s,
+                   'OFFICIAL_SOURCE',%s,%s,%s,%s,%s::jsonb,%s)
+                 ON CONFLICT (municipality_id,reference_year,crop) DO UPDATE SET
+                   area_planted_or_destined=EXCLUDED.area_planted_or_destined,
+                   area_harvested=EXCLUDED.area_harvested,
+                   production_quantity=EXCLUDED.production_quantity,
+                   average_yield=EXCLUDED.average_yield,production_value=EXCLUDED.production_value,
+                   units=EXCLUDED.units,source_reference=EXCLUDED.source_reference,
+                   classification_id=EXCLUDED.classification_id,
+                   classification_label=EXCLUDED.classification_label,
+                   category_id=EXCLUDED.category_id,category_label=EXCLUDED.category_label,
+                   raw_values=EXCLUDED.raw_values,data_status=EXCLUDED.data_status
+                 RETURNING (xmax = 0) AS inserted""",
+            (
+                new_id(),
+                municipality["id"],
+                int(metadata.period),
+                numbers.get("area_destined"),
+                numbers.get("area_harvested"),
+                numbers.get("production"),
+                numbers.get("yield"),
+                numbers.get("production_value"),
+                json.dumps(values["units"]),
+                source_reference,
+                metadata.classification_id,
+                metadata.classification_label,
+                metadata.category_id,
+                metadata.category_label,
+                json.dumps({"raw": values["raw"], "states": values["states"]}),
+                values["status"],
+            ),
+        ).fetchone()
+        return bool(row and row["inserted"])
+
+    def record_hydro_ingestion_run(
+        self,
+        *,
+        context: str,
+        started_at: datetime,
+        finished_at: datetime,
+        status: str,
+        received: int,
+        target_candidates: int,
+        inserted: int,
+        duplicates: int,
+        ignored: int,
+        invalid: int,
+        errors: int,
+        max_report_lag_seconds: float | None,
+        detail: str | None = None,
+        quality_reason_counts: dict[str, int] | None = None,
+    ) -> None:
+        self.connection.execute(
+            """INSERT INTO hydro_ingestion_run(
+                   id,provider,delivery_channel,ingestion_context,started_at,finished_at,status,
+                   observations_received,target_candidates,observations_inserted,duplicates_ignored,
+                   observations_ignored,invalid_observations,provider_errors,duration_seconds,max_report_lag_seconds,detail_sanitized,quality_reason_counts
+                 ) VALUES (%s,'INMET_WIS2','HTTP_OGC_API',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (
+                new_id(),
+                context,
+                started_at,
+                finished_at,
+                status,
+                received,
+                target_candidates,
+                inserted,
+                duplicates,
+                ignored,
+                invalid,
+                errors,
+                (finished_at - started_at).total_seconds(),
+                max_report_lag_seconds,
+                detail,
+                json.dumps(quality_reason_counts or {}),
+            ),
+        )
+
+    def ensure_september_flood_event(self, *, end_at: datetime) -> str:
+        row = self.connection.execute(
+            """INSERT INTO operational_event(
+                   id,event_key,title,start_at,end_at,status,classification,provenance
+                 ) VALUES (%s,'VALE_RIBEIRA_FLOOD_2026_09','Vale do Ribeira September 2026 factual evidence window',
+                   '2026-09-01T00:00:00Z',%s,'HISTORICAL','OFFICIAL_SOURCE',%s::jsonb)
+                 ON CONFLICT (event_key) DO UPDATE SET end_at=EXCLUDED.end_at,updated_at=now()
+                 RETURNING id""",
+            (
+                new_id(),
+                end_at,
+                json.dumps({"method": "evidence_first_factual_timeline_v1"}),
+            ),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("event upsert did not return an identifier")
+        event_id = self._id(row["id"])
+        # The event can be first registered after migration 030 has run (for
+        # example on a fresh installation during historical reconciliation).
+        # Keep the factual profile and its explicitly non-causal hypotheses
+        # coupled to that registration rather than relying on migration-time
+        # data being present.
+        self.connection.execute(
+            """INSERT INTO flood_event_profile(
+                   event_id,evidence_status,classification,limitations,provenance
+                 ) VALUES (%s,'INCONCLUSIVE','FACTUAL_EVIDENCE_ONLY',%s::jsonb,%s::jsonb)
+                 ON CONFLICT (event_id) DO NOTHING""",
+            (
+                event_id,
+                json.dumps(
+                    [
+                        "Flood extent and property/asset exposure remain unknown without a verified exposure zone"
+                    ]
+                ),
+                json.dumps(
+                    {
+                        "event_key": "VALE_RIBEIRA_FLOOD_2026_09",
+                        "method": "evidence_first_factual_event_profile_v1",
+                    }
+                ),
+            ),
+        )
+        for key, title, status, limitations in (
+            (
+                "H1_LOCAL_RAINFALL",
+                "Local rainfall contribution",
+                "INCONCLUSIVE",
+                ["Requires location and time-specific rainfall-to-exposure evidence"],
+            ),
+            (
+                "H2_UPSTREAM_RAINFALL",
+                "Upstream rainfall contribution",
+                "UNKNOWN",
+                ["Verified upstream rainfall and river sequence are unavailable"],
+            ),
+            (
+                "H3_RESERVOIR_OPERATION",
+                "Reservoir/Capivari operation contribution",
+                "INCONCLUSIVE",
+                ["Operational timing alone does not establish contribution"],
+            ),
+            (
+                "H4_ENSO_CONTEXT",
+                "ENSO/El Niño broader climate context",
+                "INCONCLUSIVE",
+                ["Climate context is not an event-causation conclusion"],
+            ),
+        ):
+            self.connection.execute(
+                """INSERT INTO flood_event_hypothesis(
+                       id,event_id,hypothesis_key,title,status,method,limitations,provenance
+                     ) VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb)
+                     ON CONFLICT (event_id,hypothesis_key) DO NOTHING""",
+                (
+                    new_id(),
+                    event_id,
+                    key,
+                    title,
+                    status,
+                    "separate evidence-first causal hypothesis; temporal association is not causation",
+                    json.dumps(limitations),
+                    json.dumps({"event_key": "VALE_RIBEIRA_FLOOD_2026_09"}),
+                ),
+            )
+        return event_id
+
+    def record_satellite_event_scene(
+        self,
+        *,
+        event_key: str,
+        provider: str,
+        collection_id: str,
+        provider_record_id: str,
+        acquired_at: datetime,
+        geometry: dict[str, Any],
+        metadata: dict[str, Any],
+        source_reference: str,
+    ) -> bool:
+        event = self.connection.execute(
+            "SELECT id FROM operational_event WHERE event_key=%s", (event_key,)
+        ).fetchone()
+        if event is None:
+            raise ValueError("operational event must exist before scene evidence")
+        row = self.connection.execute(
+            """INSERT INTO satellite_event_scene_evidence(
+                   id,event_id,provider,collection_id,provider_record_id,acquired_at,
+                   geometry,metadata,source_reference,classification
+                 ) VALUES (%s,%s,%s,%s,%s,%s,ST_SetSRID(ST_GeomFromGeoJSON(%s),4326),%s::jsonb,%s,'OFFICIAL_SOURCE')
+                 ON CONFLICT (event_id,provider,collection_id,provider_record_id) DO NOTHING
+                 RETURNING id""",
+            (
+                new_id(),
+                event["id"],
+                provider,
+                collection_id,
+                provider_record_id,
+                acquired_at,
+                json.dumps(geometry),
+                json.dumps(metadata),
+                source_reference,
+            ),
+        ).fetchone()
+        if row is not None:
+            self.connection.execute(
+                """INSERT INTO operational_event_timeline_entry(
+                       id,event_id,event_type,occurred_at,classification,source_table,source_record_id,detail
+                     ) VALUES (%s,%s,'SATELLITE_ACQUISITION',%s,'OFFICIAL_SOURCE','satellite_event_scene_evidence',%s,%s::jsonb)
+                     ON CONFLICT DO NOTHING""",
+                (
+                    new_id(),
+                    event["id"],
+                    acquired_at,
+                    row["id"],
+                    json.dumps({"provider": provider, "collection": collection_id}),
+                ),
+            )
+        return row is not None
+
+    def rebuild_september_event_timeline(self, *, end_at: datetime) -> dict[str, int]:
+        """Link only existing factual records; never infer flood causality."""
+        event_id = self.ensure_september_flood_event(end_at=end_at)
+        observations = self.connection.execute(
+            """SELECT id,station_id,period_start,period_end,normalized_value
+                 FROM hydrological_observation
+                WHERE provider='INMET_WIS2' AND variable='RAINFALL'
+                  AND period_start >= '2026-09-01T00:00:00Z' AND period_end <= %s
+                ORDER BY station_id,period_end""",
+            (end_at,),
+        ).fetchall()
+        for item in observations:
+            self.connection.execute(
+                """INSERT INTO operational_event_evidence(event_id,source_table,source_record_id,evidence_type,classification)
+                     VALUES (%s,'hydrological_observation',%s,'RAINFALL_OBSERVATION','OFFICIAL_SOURCE')
+                     ON CONFLICT DO NOTHING""",
+                (event_id, item["id"]),
+            )
+            self.connection.execute(
+                """INSERT INTO operational_event_timeline_entry(
+                       id,event_id,event_type,occurred_at,classification,source_table,source_record_id,detail
+                     ) VALUES (%s,%s,'RAINFALL_OBSERVATION',%s,'OFFICIAL_SOURCE','hydrological_observation',%s,%s::jsonb)
+                     ON CONFLICT DO NOTHING""",
+                (
+                    new_id(),
+                    event_id,
+                    item["period_end"],
+                    item["id"],
+                    json.dumps({"classification": "OBSERVED"}),
+                ),
+            )
+        copel = self.connection.execute(
+            """SELECT id,published_at FROM reservoir_operation_event
+                 WHERE published_at >= '2026-09-01T00:00:00Z' AND published_at <= %s""",
+            (end_at,),
+        ).fetchall()
+        for item in copel:
+            self.connection.execute(
+                """INSERT INTO operational_event_evidence(event_id,source_table,source_record_id,evidence_type,classification)
+                     VALUES (%s,'reservoir_operation_event',%s,'RESERVOIR_OPERATION','OFFICIAL_SOURCE') ON CONFLICT DO NOTHING""",
+                (event_id, item["id"]),
+            )
+            self.connection.execute(
+                """INSERT INTO operational_event_timeline_entry(id,event_id,event_type,occurred_at,classification,source_table,source_record_id)
+                     VALUES (%s,%s,'RESERVOIR_OPERATION',%s,'OFFICIAL_SOURCE','reservoir_operation_event',%s) ON CONFLICT DO NOTHING""",
+                (new_id(), event_id, item["published_at"], item["id"]),
+            )
+        climate = self.connection.execute(
+            """SELECT id,issued_on FROM climate_context
+                 WHERE issued_on >= date '2026-09-01' AND issued_on <= %s::date""",
+            (end_at,),
+        ).fetchall()
+        for item in climate:
+            self.connection.execute(
+                """INSERT INTO operational_event_evidence(event_id,source_table,source_record_id,evidence_type,classification)
+                     VALUES (%s,'climate_context',%s,'CLIMATE_CONTEXT','OFFICIAL_SOURCE') ON CONFLICT DO NOTHING""",
+                (event_id, item["id"]),
+            )
+            self.connection.execute(
+                """INSERT INTO operational_event_timeline_entry(id,event_id,event_type,occurred_at,classification,source_table,source_record_id)
+                     VALUES (%s,%s,'CLIMATE_CONTEXT',%s,'OFFICIAL_SOURCE','climate_context',%s) ON CONFLICT DO NOTHING""",
+                (
+                    new_id(),
+                    event_id,
+                    datetime.combine(
+                        item["issued_on"], datetime.min.time(), tzinfo=timezone.utc
+                    ),
+                    item["id"],
+                ),
+            )
+        peaks = self._rainfall_peaks(observations)
+        for hours, peak in peaks.items():
+            self.connection.execute(
+                """INSERT INTO operational_event_timeline_entry(
+                       id,event_id,event_type,occurred_at,classification,source_table,source_record_id,detail
+                     ) VALUES (%s,%s,'RAINFALL_ACCUMULATION_PEAK',%s,'CALCULATED','hydrological_observation',%s,%s::jsonb)
+                     ON CONFLICT DO NOTHING""",
+                (
+                    new_id(),
+                    event_id,
+                    peak["at"],
+                    peak["source_id"],
+                    json.dumps(
+                        {
+                            "window_hours": hours,
+                            "value_mm": peak["value"],
+                            "method": "complete_hourly_rolling_sum",
+                        }
+                    ),
+                ),
+            )
+        return {
+            "event": 1,
+            "rainfall": len(observations),
+            "copel": len(copel),
+            "climate": len(climate),
+            "peaks": len(peaks),
+        }
+
+    @staticmethod
+    def _rainfall_peaks(rows: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
+        by_station: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            by_station.setdefault(str(row["station_id"]), []).append(row)
+        result: dict[int, dict[str, Any]] = {}
+        for hours in (24, 48, 72):
+            best: dict[str, Any] | None = None
+            for samples in by_station.values():
+                for end_index in range(hours - 1, len(samples)):
+                    window = samples[end_index - hours + 1 : end_index + 1]
+                    if any(
+                        window[index]["period_end"] - window[index - 1]["period_end"]
+                        != timedelta(hours=1)
+                        for index in range(1, len(window))
+                    ):
+                        continue
+                    value = sum(
+                        float(item["normalized_value"])
+                        for item in window
+                        if item["normalized_value"] is not None
+                    )
+                    if len(window) != hours or any(
+                        item["normalized_value"] is None for item in window
+                    ):
+                        continue
+                    candidate = {
+                        "value": value,
+                        "at": window[-1]["period_end"],
+                        "source_id": window[-1]["id"],
+                    }
+                    if best is None or candidate["value"] > best["value"]:
+                        best = candidate
+            if best is not None:
+                result[hours] = best
+        return result
+
+    def vale_do_ribeira_situation(self) -> dict[str, Any]:
+        # This shared read may be called from an HTTP endpoint outside a
+        # tenant transaction. Ensure it never leaves the long-lived connection
+        # idle in transaction and holding relation locks.
+        with self.transaction():
+            return self._vale_do_ribeira_situation_in_context()
+
+    def _vale_do_ribeira_situation_in_context(self) -> dict[str, Any]:
+        """Return global facts only; lack of a source remains explicit."""
+        health = self.connection.execute(
+            "SELECT provider,status,last_success,last_observation,failure_code,updated_at FROM source_health ORDER BY provider"
+        ).fetchall()
+        events = self.connection.execute(
+            """SELECT event_type,published_at,effective_at,numeric_value,unit,
+                      description_sanitized,source_reference,classification
+                 FROM reservoir_operation_event
+                 ORDER BY published_at DESC LIMIT 20"""
+        ).fetchall()
+        climate = self.connection.execute(
+            """SELECT provider,issued_on,valid_window,enso_state,probability,
+                      strength_category,source_reference,classification
+                 FROM climate_context ORDER BY issued_on DESC LIMIT 5"""
+        ).fetchall()
+        scope = self.connection.execute(
+            "SELECT geometry_status,source_reference FROM geographic_scope WHERE scope_key='VALE_DO_RIBEIRA'"
+        ).fetchone()
+        scopes = self.connection.execute(
+            """SELECT scope_key,name,scope_type,geometry_status,source,source_version,classification
+               FROM geographic_scope
+               WHERE scope_key IN ('VALE_DO_RIBEIRA_SP_SEMIL','VALE_DO_RIBEIRA_INTERSTATE_IPARDES','RIBEIRA_DE_IGUAPE_BASIN')
+               ORDER BY scope_key"""
+        ).fetchall()
+        banana = self.connection.execute(
+            """SELECT max(reference_year) AS reference_year, count(*) AS municipalities,
+                      count(*) FILTER (WHERE data_status='WITH_DATA') AS municipalities_with_data,
+                      sum(area_harvested) AS area_harvested,
+                      sum(production_quantity) AS production,
+                      sum(production_value) AS production_value
+               FROM banana_municipal_baseline WHERE crop='BANANA'"""
+        ).fetchone()
+        banana_missing = self.connection.execute(
+            """SELECT COALESCE(raw_values->'states'->>'production',data_status) AS reason,count(*) AS count
+                 FROM banana_municipal_baseline
+                WHERE crop='BANANA' AND data_status <> 'WITH_DATA'
+                GROUP BY 1 ORDER BY 1"""
+        ).fetchall()
+        event = self.connection.execute(
+            """SELECT id,event_key,status,start_at,end_at FROM operational_event
+                 WHERE event_key='VALE_RIBEIRA_FLOOD_2026_09'"""
+        ).fetchone()
+        event_entries = self.connection.execute(
+            """SELECT event_type,count(*) AS count FROM operational_event_timeline_entry
+                 WHERE event_id=(SELECT id FROM operational_event WHERE event_key='VALE_RIBEIRA_FLOOD_2026_09')
+                GROUP BY event_type ORDER BY event_type"""
+        ).fetchall()
+        flood_profile = self.connection.execute(
+            """SELECT profile.evidence_status,profile.classification,profile.limitations,
+                      profile.provenance
+                 FROM flood_event_profile profile
+                 JOIN operational_event event ON event.id=profile.event_id
+                WHERE event.event_key='VALE_RIBEIRA_FLOOD_2026_09'"""
+        ).fetchone()
+        flood_hypotheses = self.connection.execute(
+            """SELECT hypothesis.hypothesis_key,hypothesis.title,hypothesis.status,
+                      hypothesis.method,hypothesis.limitations,hypothesis.provenance
+                 FROM flood_event_hypothesis hypothesis
+                 JOIN operational_event event ON event.id=hypothesis.event_id
+                WHERE event.event_key='VALE_RIBEIRA_FLOOD_2026_09'
+                ORDER BY hypothesis_key"""
+        ).fetchall()
+        inmet = self.connection.execute(
+            """SELECT count(DISTINCT station_id) AS stations,max(period_end) AS latest_observation,
+                      count(*) AS observations
+                 FROM hydrological_observation
+                WHERE provider='INMET_WIS2' AND variable='RAINFALL'"""
+        ).fetchone()
+        if banana is None or inmet is None:
+            raise RuntimeError("global baseline aggregate query returned no row")
+        rainfall_aggregates = self.wis2_station_rainfall_aggregates()
+        rainfall_quality = self.wis2_operational_quality_summary()
+        satellite = self.connection.execute(
+            """SELECT count(*) AS scenes FROM satellite_event_scene_evidence
+                WHERE event_id=(SELECT id FROM operational_event WHERE event_key='VALE_RIBEIRA_FLOOD_2026_09')"""
+        ).fetchone()
+        active_sar_pair = self.connection.execute(
+            """SELECT pre.provider_record_id AS pre_scene,pre.acquired_at AS pre_acquired_at,
+                      event.provider_record_id AS event_scene,event.acquired_at AS event_acquired_at,
+                      pair.common_registro_coverage_percent
+                 FROM event_sar_pair_selection pair
+                 JOIN satellite_event_scene_evidence pre ON pre.id=pair.pre_scene_evidence_id
+                 JOIN satellite_event_scene_evidence event ON event.id=pair.event_scene_evidence_id
+                WHERE pair.aoi_id=(SELECT id FROM event_analysis_aoi WHERE aoi_key='VALE_FLOOD_2026_09_REGISTRO_PILOT')
+                  AND pair.status='SELECTED'
+                ORDER BY pair.rank_order NULLS LAST,pair.updated_at DESC LIMIT 1"""
+        ).fetchone()
+        return {
+            "source_health": [dict(row) for row in health],
+            "rainfall_summary": {
+                "status": "AVAILABLE"
+                if inmet["observations"]
+                else "INSUFFICIENT_LOCAL_DATA",
+                "provider": "INMET_WIS2" if inmet["observations"] else None,
+                "delivery_channel": "HTTP_OGC_API" if inmet["observations"] else None,
+                "latest_observation": inmet["latest_observation"],
+                "observations": int(inmet["observations"]),
+                "quality": rainfall_quality,
+            },
+            "rainfall_status": "AVAILABLE"
+            if inmet["observations"]
+            else "INSUFFICIENT_LOCAL_DATA",
+            "inmet_stations": int(inmet["stations"]),
+            "rainfall_1h": rainfall_aggregates["1h"],
+            "rainfall_3h": rainfall_aggregates["3h"],
+            "rainfall_6h": rainfall_aggregates["6h"],
+            "rainfall_12h": rainfall_aggregates["12h"],
+            "rainfall_24h": rainfall_aggregates["24h"],
+            "rainfall_48h": rainfall_aggregates["48h"],
+            "rainfall_72h": rainfall_aggregates["72h"],
+            "river_summary": {
+                "status": "AUTH_REQUIRED",
+                "provider": "ANA_HIDROWEB",
+                "reason": "AUTH_REQUIRED_PENDING_PROVIDER",
+            },
+            "reservoir_events": [dict(row) for row in events],
+            "climate_context": [dict(row) for row in climate],
+            "banana_baseline_summary": {
+                "status": "UNKNOWN" if not banana["reference_year"] else "AVAILABLE",
+                "reference_year": banana["reference_year"],
+                "municipalities": int(banana["municipalities"]),
+                "municipalities_with_data": int(banana["municipalities_with_data"]),
+                "coverage_ratio": (
+                    int(banana["municipalities_with_data"])
+                    / int(banana["municipalities"])
+                    if banana["municipalities"]
+                    else 0.0
+                ),
+                "area_harvested": banana["area_harvested"],
+                "production": banana["production"],
+                "production_value": banana["production_value"],
+                "missing_reason_counts": {
+                    str(row["reason"]): int(row["count"]) for row in banana_missing
+                },
+                "limitation": "Municipal productive structure; not property or pixel crop area",
+            },
+            "event": {
+                "status": "AVAILABLE" if event else "UNKNOWN",
+                "event_key": event["event_key"] if event else None,
+                "timeline_counts": {
+                    str(row["event_type"]): int(row["count"]) for row in event_entries
+                },
+                "classification": "FACTUAL_EVIDENCE_ONLY" if event else None,
+                "flood_profile": dict(flood_profile) if flood_profile else None,
+                "hypotheses": [dict(row) for row in flood_hypotheses],
+                "sentinel1": {
+                    "status": "PAIR_SELECTED_CATALOGUE_ONLY"
+                    if active_sar_pair
+                    else "INCONCLUSIVE",
+                    "scene_count": int(satellite["scenes"]) if satellite else 0,
+                    "pre_event_scene": active_sar_pair["pre_acquired_at"]
+                    if active_sar_pair
+                    else None,
+                    "event_scene": active_sar_pair["event_acquired_at"]
+                    if active_sar_pair
+                    else None,
+                    "active_pair": dict(active_sar_pair) if active_sar_pair else None,
+                    "limitation": "Catalogue pair selection is not flood classification; no new Process API imagery was requested",
+                },
+            },
+            "scope_definition": [dict(row) for row in scopes],
+            "active_alerts": [],
+            "unknowns": [
+                "No verified automated SAISP observation contract",
+                "ANA hydrological inventory and telemetry require official OAuth credentials",
+                "Ribeira de Iguape hydrological-basin geometry remains unknown",
+            ],
+            "evidence": {
+                "scope_geometry_status": scope["geometry_status"]
+                if scope
+                else "UNKNOWN",
+                "scope_reference": scope["source_reference"] if scope else None,
+            },
+        }
+
+    def assess_flood_exposure(
+        self,
+        tenant_id: str,
+        *,
+        event_key: str,
+        subject_type: str,
+        subject_id: str,
+        exposure_zone_id: str | None,
+        actor: str,
+    ) -> dict[str, Any]:
+        """Persist one reproducible spatial assessment without inferring a hazard.
+
+        A reported municipality impact cannot be substituted for an exposure
+        zone. A missing, unverified, simulated, or non-flood zone is therefore
+        recorded as UNKNOWN rather than converted into an exposure decision.
+        """
+        if subject_type not in {"PROPERTY", "ASSET"}:
+            raise ValueError("flood exposure subject_type must be PROPERTY or ASSET")
+        event = self.connection.execute(
+            "SELECT id FROM operational_event WHERE event_key=%s", (event_key,)
+        ).fetchone()
+        if event is None:
+            raise LookupError("flood event is unavailable")
+        if subject_type == "PROPERTY":
+            subject = self.connection.execute(
+                "SELECT geometry FROM property WHERE tenant_id=%s AND id=%s",
+                (tenant_id, subject_id),
+            ).fetchone()
+        else:
+            subject = self.connection.execute(
+                "SELECT geometry FROM asset WHERE tenant_id=%s AND id=%s",
+                (tenant_id, subject_id),
+            ).fetchone()
+        if subject is None:
+            raise LookupError("exposure subject is unavailable in tenant")
+
+        status = "UNKNOWN"
+        classification = "UNKNOWN"
+        method = "no_verified_flood_exposure_zone"
+        intersection_km2: float | None = None
+        limitations: list[str] = []
+        provenance: dict[str, Any] = {
+            "event_key": event_key,
+            "subject_type": subject_type,
+            "subject_id": subject_id,
+            "requested_exposure_zone_id": exposure_zone_id,
+            "actor": actor,
+        }
+        if subject["geometry"] is None:
+            limitations.append("SUBJECT_GEOMETRY_UNKNOWN")
+        elif exposure_zone_id is None:
+            limitations.append("VERIFIED_FLOOD_EXPOSURE_ZONE_REQUIRED")
+        else:
+            zone = self.connection.execute(
+                """SELECT id,zone_type,geometry,geometry_status,classification,method,
+                          source_reference,limitations,provenance
+                     FROM flood_event_exposure_zone WHERE id=%s AND event_id=%s""",
+                (exposure_zone_id, event["id"]),
+            ).fetchone()
+            if zone is None:
+                raise LookupError("exposure zone is unavailable for flood event")
+            provenance["exposure_zone"] = {
+                "id": str(zone["id"]),
+                "type": zone["zone_type"],
+                "classification": zone["classification"],
+                "method": zone["method"],
+                "source_reference": zone["source_reference"],
+            }
+            if zone["geometry_status"] != "VERIFIED" or zone["geometry"] is None:
+                limitations.append("EXPOSURE_ZONE_GEOMETRY_UNKNOWN")
+            elif zone["classification"] == "SIMULATED":
+                limitations.append("SIMULATED_EXPOSURE_ZONE_NOT_ACTIONABLE")
+            elif zone["zone_type"] != "FLOOD_EXTENT":
+                limitations.append("VERIFIED_FLOOD_EXTENT_REQUIRED")
+            else:
+                metric = self.connection.execute(
+                    """SELECT ST_Intersects(subject.geometry,zone.geometry) AS intersects,
+                              ST_Area(ST_Intersection(subject.geometry,zone.geometry)::geography) / 1000000.0 AS km2
+                         FROM (SELECT geometry FROM flood_event_exposure_zone WHERE id=%s) zone,
+                              (SELECT geometry FROM property WHERE id=%s) subject"""
+                    if subject_type == "PROPERTY"
+                    else """SELECT ST_Intersects(subject.geometry,zone.geometry) AS intersects,
+                              ST_Area(ST_Intersection(subject.geometry,zone.geometry)::geography) / 1000000.0 AS km2
+                         FROM (SELECT geometry FROM flood_event_exposure_zone WHERE id=%s) zone,
+                              (SELECT geometry FROM asset WHERE id=%s) subject""",
+                    (exposure_zone_id, subject_id),
+                ).fetchone()
+                if metric is None:
+                    raise RuntimeError("flood exposure geometry calculation failed")
+                intersection_km2 = float(metric["km2"] or 0)
+                status = "EXPOSED" if metric["intersects"] else "NOT_EXPOSED"
+                classification = "CALCULATED"
+                method = "postgis_geographic_intersection_v1"
+                limitations.extend(zone["limitations"] or [])
+
+        row = self.connection.execute(
+            """INSERT INTO tenant_flood_exposure_assessment(
+                   id,tenant_id,event_id,exposure_zone_id,subject_type,property_id,asset_id,
+                   status,classification,method,intersection_km2,limitations,provenance,assessed_at
+                 ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,now())
+                 RETURNING id,status,classification,method,intersection_km2,limitations,provenance,assessed_at""",
+            (
+                new_id(),
+                tenant_id,
+                event["id"],
+                exposure_zone_id,
+                subject_type,
+                subject_id if subject_type == "PROPERTY" else None,
+                subject_id if subject_type == "ASSET" else None,
+                status,
+                classification,
+                method,
+                intersection_km2,
+                json.dumps(limitations),
+                json.dumps(provenance),
+            ),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("flood exposure assessment was not persisted")
+        return dict(row)
+
+    def list_flood_exposure_assessments(
+        self,
+        tenant_id: str,
+        *,
+        event_key: str | None = None,
+        subject_type: str | None = None,
+        property_id: str | None = None,
+        asset_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List tenant-scoped flood exposure assessments with optional filters."""
+        conditions = ["ta.tenant_id=%s"]
+        params: list[Any] = [tenant_id]
+        if event_key is not None:
+            conditions.append("e.event_key=%s")
+            params.append(event_key)
+        if subject_type is not None:
+            conditions.append("ta.subject_type=%s")
+            params.append(subject_type)
+        if property_id is not None:
+            conditions.append("ta.property_id=%s")
+            params.append(property_id)
+        if asset_id is not None:
+            conditions.append("ta.asset_id=%s")
+            params.append(asset_id)
+
+        where_clause = " AND ".join(conditions)
+        rows = self.connection.execute(
+            f"""SELECT ta.id,ta.event_id,e.event_key,ta.exposure_zone_id,ta.subject_type,
+                      ta.property_id,ta.asset_id,ta.status,ta.classification,ta.method,
+                      ta.intersection_km2,ta.limitations,ta.provenance,ta.assessed_at,ta.created_at,
+                      ST_AsGeoJSON(p.geometry) AS property_geometry,
+                      ST_AsGeoJSON(a.geometry) AS asset_geometry
+                 FROM tenant_flood_exposure_assessment ta
+                 LEFT JOIN operational_event e ON ta.event_id=e.id
+                 LEFT JOIN property p ON ta.property_id=p.id
+                 LEFT JOIN asset a ON ta.asset_id=a.id
+                WHERE {where_clause}
+                ORDER BY ta.assessed_at DESC""",
+            tuple(params),
+        ).fetchall()
+        result = []
+        for row in rows:
+            record = dict(row)
+            if record["property_geometry"]:
+                record["property_geometry_geojson"] = json.loads(
+                    record["property_geometry"]
+                )
+            if record["asset_geometry"]:
+                record["asset_geometry_geojson"] = json.loads(record["asset_geometry"])
+            record["limitations"] = json.loads(record["limitations"])
+            record["provenance"] = json.loads(record["provenance"])
+            result.append(record)
+        return result
 
     def _one(self, sql: str, params: Iterable[Any] = ()) -> dict[str, Any] | None:
         return self.connection.execute(sql, tuple(params)).fetchone()
@@ -83,7 +1278,7 @@ class PostgresStore:
         )
         return tenant
 
-    def create_property(self, item: Property) -> Property:
+    def create_property(self, item: Property, *, actor: str = "user") -> Property:
         if not self.tenant_exists(item.tenant_id):
             raise PermissionError("tenant does not exist or is outside context")
         if item.geometry_crs and item.geometry_crs.upper() not in {
@@ -99,8 +1294,8 @@ class PostgresStore:
             else None
         )
         self.connection.execute(
-            """INSERT INTO property(id,tenant_id,name,geometry,geometry_crs,data_classification,created_at)
-               VALUES (%s,%s,%s,CASE WHEN %s::text IS NULL THEN NULL ELSE ST_SetSRID(ST_GeomFromGeoJSON(%s::text),4326) END,%s,%s,%s)""",
+            """INSERT INTO property(id,tenant_id,name,geometry,geometry_crs,boundary_source,boundary_checksum,data_classification,created_at)
+               VALUES (%s,%s,%s,CASE WHEN %s::text IS NULL THEN NULL ELSE ST_SetSRID(ST_GeomFromGeoJSON(%s::text),4326) END,%s,%s,%s,%s,%s)""",
             (
                 item.id,
                 item.tenant_id,
@@ -108,15 +1303,38 @@ class PostgresStore:
                 geometry,
                 geometry,
                 item.geometry_crs,
+                item.boundary_source,
+                item.boundary_checksum,
                 item.classification.value,
                 item.created_at,
             ),
         )
+        if (
+            item.geometry_geojson is not None
+            and item.boundary_source
+            and item.boundary_checksum
+        ):
+            self.connection.execute(
+                """INSERT INTO property_boundary_version(id,tenant_id,property_id,version,geometry,geometry_crs,boundary_source,data_classification,checksum,actor,effective_at)
+                   VALUES (%s,%s,%s,1,ST_SetSRID(ST_GeomFromGeoJSON(%s),4326),%s,%s,%s,%s,%s,%s)""",
+                (
+                    new_id(),
+                    item.tenant_id,
+                    item.id,
+                    geometry,
+                    item.geometry_crs,
+                    item.boundary_source,
+                    item.classification.value,
+                    item.boundary_checksum,
+                    actor,
+                    item.created_at,
+                ),
+            )
         return item
 
     def get_property(self, tenant_id: str, property_id: str) -> Property | None:
         row = self._one(
-            "SELECT id,tenant_id,name,ST_AsGeoJSON(geometry) AS geometry_geojson,geometry_crs,data_classification,created_at FROM property WHERE tenant_id=%s AND id=%s",
+            "SELECT id,tenant_id,name,ST_AsGeoJSON(geometry) AS geometry_geojson,geometry_crs,data_classification,created_at,boundary_source,boundary_checksum,updated_at FROM property WHERE tenant_id=%s AND id=%s",
             (tenant_id, property_id),
         )
         if row is None:
@@ -129,6 +1347,210 @@ class PostgresStore:
             row["geometry_crs"],
             DataClassification(row["data_classification"]),
             row["created_at"].isoformat(),
+            row["boundary_source"],
+            row["boundary_checksum"],
+            row["updated_at"].isoformat() if row["updated_at"] else None,
+        )
+
+    def list_properties(self, tenant_id: str) -> list[Property]:
+        rows = self.connection.execute(
+            """SELECT id,tenant_id,name,ST_AsGeoJSON(geometry) AS geometry_geojson,
+                      geometry_crs,data_classification,created_at,boundary_source,
+                      boundary_checksum,updated_at
+               FROM property WHERE tenant_id=%s ORDER BY created_at DESC, id""",
+            (tenant_id,),
+        ).fetchall()
+        return [self._property_from_row(row) for row in rows]
+
+    def _property_from_row(self, row: dict[str, Any]) -> Property:
+        """Translate a property row without issuing a per-property query."""
+        return Property(
+            self._id(row["id"]),
+            self._id(row["tenant_id"]),
+            row["name"],
+            json.loads(row["geometry_geojson"]) if row["geometry_geojson"] else None,
+            row["geometry_crs"],
+            DataClassification(row["data_classification"]),
+            row["created_at"].isoformat(),
+            row["boundary_source"],
+            row["boundary_checksum"],
+            row["updated_at"].isoformat() if row["updated_at"] else None,
+        )
+
+    def update_property_boundary(
+        self,
+        item: Property,
+        *,
+        actor: str,
+        reason: str,
+        effective_at: str,
+        expected_checksum: str | None,
+    ) -> int:
+        # Lock the current property before allocating a version. This makes
+        # max(version)+1 serial for one property while retaining independent
+        # concurrency across different tenant/property pairs.
+        locked = self.connection.execute(
+            "SELECT id FROM property WHERE tenant_id=%s AND id=%s FOR UPDATE",
+            (item.tenant_id, item.id),
+        ).fetchone()
+        if locked is None:
+            raise LookupError("property not found in tenant")
+        current = self.get_property(item.tenant_id, item.id)
+        if current is None:
+            raise LookupError("property not found in tenant")
+        if current.boundary_checksum != expected_checksum:
+            raise ValueError("boundary checksum no longer matches the current version")
+        version_row = self.connection.execute(
+            "SELECT coalesce(max(version), 0) + 1 AS version FROM property_boundary_version WHERE tenant_id=%s AND property_id=%s",
+            (item.tenant_id, item.id),
+        ).fetchone()
+        if version_row is None:
+            raise RuntimeError("boundary version could not be allocated")
+        version = int(version_row["version"])
+        geometry = json.dumps(item.geometry_geojson)
+        self.connection.execute(
+            """INSERT INTO property_boundary_version(id,tenant_id,property_id,version,geometry,geometry_crs,boundary_source,data_classification,checksum,reason,actor,effective_at)
+               VALUES (%s,%s,%s,%s,ST_SetSRID(ST_GeomFromGeoJSON(%s),4326),%s,%s,%s,%s,%s,%s,%s)""",
+            (
+                new_id(),
+                item.tenant_id,
+                item.id,
+                version,
+                geometry,
+                item.geometry_crs,
+                item.boundary_source,
+                item.classification.value,
+                item.boundary_checksum,
+                reason,
+                actor,
+                effective_at,
+            ),
+        )
+        self.connection.execute(
+            """UPDATE property SET geometry=ST_SetSRID(ST_GeomFromGeoJSON(%s),4326),geometry_crs=%s,boundary_source=%s,boundary_checksum=%s,data_classification=%s,updated_at=%s WHERE tenant_id=%s AND id=%s""",
+            (
+                geometry,
+                item.geometry_crs,
+                item.boundary_source,
+                item.boundary_checksum,
+                item.classification.value,
+                effective_at,
+                item.tenant_id,
+                item.id,
+            ),
+        )
+        return version
+
+    def create_boundary_import(self, item: BoundaryImport) -> BoundaryImport:
+        geometry = json.dumps(item.geometry_geojson) if item.geometry_geojson else None
+        self.connection.execute(
+            """INSERT INTO boundary_import(
+                 id,tenant_id,property_id,original_filename,original_format,file_size_bytes,
+                 file_sha256,object_reference,original_crs,detected_crs,target_crs,geometry,
+                 geometry_checksum,boundary_source,data_classification,warnings,status,created_by,
+                 expected_property_checksum,created_at
+               ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                 CASE WHEN %s::text IS NULL THEN NULL ELSE ST_SetSRID(ST_GeomFromGeoJSON(%s::text),4326) END,
+                 %s,%s,%s,%s::jsonb,%s,%s,%s,%s)""",
+            (
+                item.id,
+                item.tenant_id,
+                item.property_id,
+                item.original_filename,
+                item.original_format,
+                item.file_size_bytes,
+                item.file_sha256,
+                item.object_reference,
+                item.original_crs,
+                item.detected_crs,
+                item.target_crs,
+                geometry,
+                geometry,
+                item.geometry_checksum,
+                item.boundary_source,
+                item.classification.value,
+                json.dumps(item.warnings),
+                item.status,
+                item.created_by,
+                item.expected_property_checksum,
+                item.created_at,
+            ),
+        )
+        return item
+
+    def get_boundary_import(
+        self, tenant_id: str, import_id: str, *, lock: bool = False
+    ) -> BoundaryImport | None:
+        suffix = " FOR UPDATE" if lock else ""
+        row = self._one(
+            """SELECT id,tenant_id,property_id,original_filename,original_format,file_size_bytes,
+                      file_sha256,object_reference,original_crs,detected_crs,target_crs,
+                      ST_AsGeoJSON(geometry) AS geometry_geojson,geometry_checksum,boundary_source,
+                      data_classification,warnings,status,created_by,expected_property_checksum,
+                      created_at,reviewed_by,review_reason,approved_boundary_version,reviewed_at
+               FROM boundary_import WHERE tenant_id=%s AND id=%s"""
+            + suffix,
+            (tenant_id, import_id),
+        )
+        return self._boundary_import_from_row(row) if row else None
+
+    def list_boundary_imports(
+        self, tenant_id: str, property_id: str
+    ) -> list[BoundaryImport]:
+        rows = self.connection.execute(
+            """SELECT id,tenant_id,property_id,original_filename,original_format,file_size_bytes,
+                      file_sha256,object_reference,original_crs,detected_crs,target_crs,
+                      ST_AsGeoJSON(geometry) AS geometry_geojson,geometry_checksum,boundary_source,
+                      data_classification,warnings,status,created_by,expected_property_checksum,
+                      created_at,reviewed_by,review_reason,approved_boundary_version,reviewed_at
+               FROM boundary_import WHERE tenant_id=%s AND property_id=%s
+               ORDER BY created_at DESC, id""",
+            (tenant_id, property_id),
+        ).fetchall()
+        return [self._boundary_import_from_row(row) for row in rows]
+
+    def review_boundary_import(
+        self,
+        item: BoundaryImport,
+        *,
+        status: str,
+        reviewer: str,
+        reason: str,
+        approved_version: int | None = None,
+    ) -> None:
+        self.connection.execute(
+            """UPDATE boundary_import SET status=%s,reviewed_by=%s,review_reason=%s,
+                      reviewed_at=now(),approved_boundary_version=%s
+               WHERE tenant_id=%s AND id=%s""",
+            (status, reviewer, reason, approved_version, item.tenant_id, item.id),
+        )
+
+    def _boundary_import_from_row(self, row: dict[str, Any]) -> BoundaryImport:
+        return BoundaryImport(
+            self._id(row["id"]),
+            self._id(row["tenant_id"]),
+            self._id(row["property_id"]),
+            row["original_filename"],
+            row["original_format"],
+            int(row["file_size_bytes"]),
+            row["file_sha256"],
+            row["object_reference"],
+            row["original_crs"],
+            row["detected_crs"],
+            row["target_crs"],
+            json.loads(row["geometry_geojson"]) if row["geometry_geojson"] else None,
+            row["geometry_checksum"],
+            row["boundary_source"],
+            DataClassification(row["data_classification"]),
+            list(row["warnings"]),
+            row["status"],
+            row["created_by"],
+            row["expected_property_checksum"],
+            row["created_at"].isoformat(),
+            row["reviewed_by"],
+            row["review_reason"],
+            row["approved_boundary_version"],
+            row["reviewed_at"].isoformat() if row["reviewed_at"] else None,
         )
 
     def create_source(self, item: Source) -> Source:
@@ -291,34 +1713,81 @@ class PostgresStore:
             row["created_at"].isoformat(),
         )
 
-    def active_rule(self, tenant_id: str, metric: str) -> RuleDefinition | None:
-        row = self._one(
-            "SELECT * FROM rule_definition WHERE tenant_id=%s AND metric=%s AND status='ACTIVE' AND valid_from <= now() AND (valid_until IS NULL OR now() < valid_until) ORDER BY version DESC LIMIT 1",
-            (tenant_id, metric),
-        )
-        if row is None:
-            return None
-        return RuleDefinition(
-            self._id(row["id"]),
-            self._id(row["tenant_id"]),
-            row["version"],
-            row["name"],
-            RuleAuthority(row["authority"]),
-            row["metric"],
-            row["operator"],
-            row["threshold"],
-            row["unit"],
-            row["severity"],
-            row["status"],
-            row["approved_by"],
-            row["valid_from"].isoformat(),
-            row["valid_until"].isoformat() if row["valid_until"] else None,
-            row["created_at"].isoformat(),
+    def active_rules(
+        self,
+        tenant_id: str,
+        metric: str,
+        property_id: str | None = None,
+        asset_id: str | None = None,
+        field_id: str | None = None,
+    ) -> list[RuleDefinition]:
+        rows = self.connection.execute(
+            """SELECT DISTINCT r.* FROM rule_definition r
+                 LEFT JOIN customer_property cp
+                   ON cp.tenant_id=r.tenant_id
+                  AND cp.customer_id=r.scope_customer_id
+                  AND cp.property_id=%s
+                  AND cp.valid_from <= now()
+                  AND (cp.valid_until IS NULL OR now() < cp.valid_until)
+                WHERE r.tenant_id=%s AND r.metric=%s AND r.status='ACTIVE'
+                  AND r.valid_from <= now() AND (r.valid_until IS NULL OR now() < r.valid_until)
+                  AND (r.scope_type='TENANT'
+                   OR (r.scope_type='PROPERTY' AND r.scope_property_id=%s)
+                   OR (r.scope_type='ASSET' AND r.scope_asset_id=%s)
+                   OR (r.scope_type='FIELD' AND r.scope_field_id=%s)
+                   OR (r.scope_type='CUSTOMER' AND cp.id IS NOT NULL))
+                 ORDER BY r.version DESC""",
+            (property_id, tenant_id, metric, property_id, asset_id, field_id),
+        ).fetchall()
+        return [
+            RuleDefinition(
+                self._id(row["id"]),
+                self._id(row["tenant_id"]),
+                row["version"],
+                row["name"],
+                RuleAuthority(row["authority"]),
+                row["metric"],
+                row["operator"],
+                row["threshold"],
+                row["unit"],
+                row["severity"],
+                row["status"],
+                row["approved_by"],
+                row["valid_from"].isoformat(),
+                row["valid_until"].isoformat() if row["valid_until"] else None,
+                row["created_at"].isoformat(),
+                row["scope_type"],
+                self._id(row["scope_property_id"])
+                if row["scope_property_id"]
+                else None,
+                self._id(row["scope_asset_id"]) if row["scope_asset_id"] else None,
+                self._id(row["scope_field_id"]) if row["scope_field_id"] else None,
+                self._id(row["scope_customer_id"])
+                if row["scope_customer_id"]
+                else None,
+            )
+            for row in rows
+        ]
+
+    def active_rule(
+        self,
+        tenant_id: str,
+        metric: str,
+        property_id: str | None = None,
+        asset_id: str | None = None,
+        field_id: str | None = None,
+    ) -> RuleDefinition | None:
+        rules = self.active_rules(tenant_id, metric, property_id, asset_id, field_id)
+        priority = {"ASSET": 0, "FIELD": 1, "PROPERTY": 2, "CUSTOMER": 3, "TENANT": 4}
+        return (
+            min(rules, key=lambda rule: (priority[rule.scope_type], -rule.version))
+            if rules
+            else None
         )
 
     def create_rule(self, item: RuleDefinition) -> RuleDefinition:
         self.connection.execute(
-            "INSERT INTO rule_definition(id,tenant_id,version,name,authority,metric,operator,threshold,unit,severity,status,approved_by,valid_from,valid_until,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            "INSERT INTO rule_definition(id,tenant_id,version,name,authority,metric,operator,threshold,unit,severity,status,approved_by,valid_from,valid_until,created_at,scope_type,scope_property_id,scope_asset_id,scope_field_id,scope_customer_id) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 item.id,
                 item.tenant_id,
@@ -335,14 +1804,19 @@ class PostgresStore:
                 item.valid_from,
                 item.valid_until,
                 item.created_at,
+                item.scope_type,
+                item.scope_property_id,
+                item.scope_asset_id,
+                item.scope_field_id,
+                item.scope_customer_id,
             ),
         )
         return item
 
     def create_decision(self, item: Decision) -> Decision:
         self.connection.execute(
-            """INSERT INTO decision(id,tenant_id,property_id,conclusion,data_classification,status,evidence_ids,rule_id,rule_version,model_id,model_version,confidence,limitations,missing_data,conflicts,recommended_action,created_at)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            """INSERT INTO decision(id,tenant_id,property_id,conclusion,data_classification,status,evidence_ids,rule_id,rule_version,model_id,model_version,confidence,limitations,missing_data,conflicts,recommended_action,subject_asset_id,subject_field_id,subject_field_boundary_version,subject_field_boundary_checksum,selected_rule_scope_type,subject_customer_id,created_at)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (
                 item.id,
                 item.tenant_id,
@@ -362,10 +1836,84 @@ class PostgresStore:
                 json.dumps(item.recommended_action)
                 if item.recommended_action is not None
                 else None,
+                item.subject_asset_id,
+                item.subject_field_id,
+                item.subject_field_boundary_version,
+                item.subject_field_boundary_checksum,
+                item.selected_rule_scope_type,
+                item.subject_customer_id,
                 item.created_at,
             ),
         )
         return item
+
+    def decision_history_for_property(
+        self, tenant_id: str, property_id: str
+    ) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            """SELECT d.*,a.id AS action_id,a.status AS action_status,
+                      a.completed_at,a.completed_by,a.outcome_detail,
+                      a.outcome_classification,a.outcome_evidence_ids
+                 FROM decision d LEFT JOIN action a ON a.decision_id=d.id
+                WHERE d.tenant_id=%s AND d.property_id=%s
+                ORDER BY d.created_at DESC""",
+            (tenant_id, property_id),
+        ).fetchall()
+        return [
+            {
+                "id": self._id(row["id"]),
+                "property_id": self._id(row["property_id"]),
+                "subject_asset_id": (
+                    self._id(row["subject_asset_id"])
+                    if row["subject_asset_id"]
+                    else None
+                ),
+                "subject_field_id": (
+                    self._id(row["subject_field_id"])
+                    if row["subject_field_id"]
+                    else None
+                ),
+                "subject_field_boundary_version": row["subject_field_boundary_version"],
+                "subject_field_boundary_checksum": row[
+                    "subject_field_boundary_checksum"
+                ],
+                "selected_rule_scope_type": row["selected_rule_scope_type"],
+                "subject_customer_id": (
+                    self._id(row["subject_customer_id"])
+                    if row["subject_customer_id"]
+                    else None
+                ),
+                "conclusion": row["conclusion"],
+                "classification": row["data_classification"],
+                "status": row["status"],
+                "evidence_ids": row["evidence_ids"],
+                "rule_id": self._id(row["rule_id"]) if row["rule_id"] else None,
+                "rule_version": row["rule_version"],
+                "limitations": row["limitations"],
+                "missing_data": row["missing_data"],
+                "conflicts": row["conflicts"],
+                "recommended_action": row["recommended_action"],
+                "created_at": row["created_at"].isoformat(),
+                "action": (
+                    {
+                        "id": self._id(row["action_id"]),
+                        "status": row["action_status"],
+                        "completed_at": (
+                            row["completed_at"].isoformat()
+                            if row["completed_at"]
+                            else None
+                        ),
+                        "completed_by": row["completed_by"],
+                        "outcome_detail": row["outcome_detail"],
+                        "outcome_classification": row["outcome_classification"],
+                        "outcome_evidence_ids": row["outcome_evidence_ids"],
+                    }
+                    if row["action_id"]
+                    else None
+                ),
+            }
+            for row in rows
+        ]
 
     def create_alert(self, item: Alert) -> Alert:
         self.connection.execute(
@@ -398,6 +1946,63 @@ class PostgresStore:
                 item.created_at,
             ),
         )
+        return item
+
+    def complete_action(
+        self,
+        tenant_id: str,
+        action_id: str,
+        *,
+        actor: str,
+        detail: str,
+        classification: str,
+        evidence_ids: list[str],
+        completed_at: str,
+    ) -> None:
+        if not detail.strip():
+            raise ValueError("action outcome detail is required")
+        if evidence_ids:
+            row = self.connection.execute(
+                "SELECT count(*) AS count FROM evidence WHERE tenant_id=%s AND id=ANY(%s)",
+                (tenant_id, evidence_ids),
+            ).fetchone()
+            if row is None or int(row["count"]) != len(set(evidence_ids)):
+                raise ValueError("action outcome evidence must belong to tenant")
+        row = self.connection.execute(
+            """UPDATE action SET status='COMPLETED',completed_at=%s,completed_by=%s,outcome_detail=%s,outcome_classification=%s,outcome_evidence_ids=%s::jsonb
+            WHERE id=%s AND tenant_id=%s AND status='OPEN' RETURNING id""",
+            (
+                completed_at,
+                actor,
+                detail,
+                classification,
+                json.dumps(evidence_ids),
+                action_id,
+                tenant_id,
+            ),
+        ).fetchone()
+        if row is None:
+            raise LookupError("open action is unavailable in tenant")
+
+    def create_pilot_feedback(self, item: PilotFeedback) -> PilotFeedback:
+        row = self.connection.execute(
+            """INSERT INTO pilot_feedback(
+                   id,tenant_id,property_id,submitted_by,feedback_type,page,feature_id,message,created_at
+                 ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+            (
+                item.id,
+                item.tenant_id,
+                item.property_id,
+                item.submitted_by,
+                item.feedback_type,
+                item.page,
+                item.feature_id,
+                item.message,
+                item.created_at,
+            ),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("pilot feedback insert did not return an identifier")
         return item
 
     def create_quality_event(

@@ -1,0 +1,125 @@
+import { describe, expect, it, vi } from "vitest";
+import { Farm360Api } from "./client";
+import type { FieldContextCreate, PropertyCreate } from "../types/farm360";
+
+describe("Farm360Api", () => {
+  it("uses the tenant-scoped contract and bearer session", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await new Farm360Api("https://api.example", "session-token").products("tenant / id", "property / id");
+    expect(fetchMock).toHaveBeenCalledWith("https://api.example/v1/tenants/tenant%20%2F%20id/properties/property%20%2F%20id/derived-products", { headers: { Authorization: "Bearer session-token" } });
+  });
+
+  it("scopes temporal comparison and delta creation to an encoded field", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "READY" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "job" }), { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const api = new Farm360Api("https://api.example", "session-token");
+
+    await api.comparison("tenant", "property", "baseline", "target", "field / id");
+    await api.createTemporalDeltaJob("tenant", "property", "baseline", "target", "field / id");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "https://api.example/v1/tenants/tenant/properties/property/temporal-comparison?baseline_product_id=baseline&target_product_id=target&field_id=field%20%2F%20id",
+      { headers: { Authorization: "Bearer session-token" } },
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "https://api.example/v1/tenants/tenant/properties/property/temporal-delta-jobs",
+      {
+        method: "POST",
+        headers: { Authorization: "Bearer session-token", "Content-Type": "application/json" },
+        body: JSON.stringify({ baseline_product_id: "baseline", target_product_id: "target", field_id: "field / id" }),
+      },
+    );
+  });
+
+  it("creates a property through the authenticated tenant-scoped contract", async () => {
+    const payload: PropertyCreate = { name: "AOI", geometry_geojson: { type: "Polygon", coordinates: [] }, geometry_crs: "EPSG:4326", boundary_source: "MANUAL_CONFIRMED", classification: "MANUAL_CONFIRMED" };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "property-id" }), { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await new Farm360Api("https://api.example", "session-token").createProperty("tenant", payload);
+    expect(fetchMock).toHaveBeenCalledWith("https://api.example/v1/tenants/tenant/properties", { method: "POST", headers: { Authorization: "Bearer session-token", "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  });
+
+  it("loads the portfolio only through the encoded tenant-scoped endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await new Farm360Api("https://api.example", "session-token").portfolio("tenant / id");
+    expect(fetchMock).toHaveBeenCalledWith("https://api.example/v1/tenants/tenant%20%2F%20id/portfolio", { headers: { Authorization: "Bearer session-token" } });
+  });
+
+  it("loads effective capabilities only from the authenticated tenant endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ permissions: [] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await new Farm360Api("https://api.example", "session-token").access("tenant / id");
+    expect(fetchMock).toHaveBeenCalledWith("https://api.example/v1/tenants/tenant%20%2F%20id/access", { headers: { Authorization: "Bearer session-token" } });
+  });
+
+
+  it("registers a Digital Twin asset only through the authenticated tenant endpoint", async () => {
+    const payload = { asset_type: "RAIN_GAUGE", name: "Gauge A", status: "ACTIVE", property_id: "property", source_reference: "field survey", observed_at: "2026-09-24T10:00:00Z", context: {}, classification: "MANUAL_CONFIRMED" as const };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "asset" }), { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await new Farm360Api("https://api.example", "session-token").registerAsset("tenant / id", payload);
+    expect(fetchMock).toHaveBeenCalledWith("https://api.example/v1/tenants/tenant%20%2F%20id/assets", { method: "POST", headers: { Authorization: "Bearer session-token", "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  });
+
+  it("loads Digital Twin assets through the tenant-scoped property endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ property_id: "property", items: [] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await new Farm360Api("https://api.example", "session-token").assets("tenant / id", "property / id");
+    expect(fetchMock).toHaveBeenCalledWith("https://api.example/v1/tenants/tenant%20%2F%20id/properties/property%20%2F%20id/assets", { headers: { Authorization: "Bearer session-token" } });
+  });
+
+  it("loads and registers fields only through the encoded tenant property endpoint", async () => {
+    const payload: FieldContextCreate = { name: "Field A", status: "ACTIVE", geometry_geojson: { type: "Polygon", coordinates: [] }, geometry_crs: "EPSG:4326", source_reference: "synthetic_test_data field walk", observed_at: "2026-09-24T10:00:00Z", classification: "MANUAL_CONFIRMED" };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ property_id: "property", items: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "field" }), { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const api = new Farm360Api("https://api.example", "session-token");
+    await api.fields("tenant / id", "property / id");
+    await api.registerField("tenant / id", "property / id", payload);
+    const path = "https://api.example/v1/tenants/tenant%20%2F%20id/properties/property%20%2F%20id/fields";
+    expect(fetchMock).toHaveBeenNthCalledWith(1, path, { headers: { Authorization: "Bearer session-token" } });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, path, { method: "POST", headers: { Authorization: "Bearer session-token", "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  });
+
+  it("evaluates assets and fields only through encoded authenticated tenant endpoints", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ decision: { id: "decision" } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const api = new Farm360Api("https://api.example", "session-token");
+    await api.evaluateAsset("tenant / id", "asset / id");
+    await api.evaluateField("tenant / id", "field / id");
+    const request = { method: "POST", headers: { Authorization: "Bearer session-token", "Content-Type": "application/json" }, body: undefined };
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "https://api.example/v1/tenants/tenant%20%2F%20id/assets/asset%20%2F%20id/evaluate", request);
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "https://api.example/v1/tenants/tenant%20%2F%20id/fields/field%20%2F%20id/evaluate", request);
+  });
+
+  it("uploads GeoJSON bytes through the tenant-scoped review endpoint without a storage path", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "import" }), { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const file = new File(["synthetic_test_data"], "boundary.geojson", { type: "application/geo+json" });
+    await new Farm360Api("https://api.example", "session-token").uploadBoundaryImport("tenant", "property", file, "synthetic source", "MANUAL_CONFIRMED", "EPSG:4326");
+    expect(fetchMock).toHaveBeenCalledWith("https://api.example/v1/tenants/tenant/properties/property/boundary-imports", expect.objectContaining({ method: "POST", body: file, headers: expect.objectContaining({ "X-Boundary-Filename": "boundary.geojson", "X-Boundary-CRS": "EPSG:4326" }) }));
+  });
+
+  it("labels a KMZ upload with its declared format while retaining the tenant contract", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "import" }), { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const file = new File(["synthetic_test_kmz"], "boundary.kmz", { type: "application/octet-stream" });
+    await new Farm360Api("https://api.example", "session-token").uploadBoundaryImport("tenant", "property", file, "synthetic source", "MANUAL_CONFIRMED", "EPSG:4326");
+    expect(fetchMock).toHaveBeenCalledWith("https://api.example/v1/tenants/tenant/properties/property/boundary-imports", expect.objectContaining({ headers: expect.objectContaining({ "Content-Type": "application/vnd.google-earth.kmz", "X-Boundary-Filename": "boundary.kmz" }) }));
+  });
+
+  it("records an action outcome only through the encoded authenticated tenant endpoint", async () => {
+    const payload = { outcome_detail: "Inspection completed", outcome_classification: "MANUAL_CONFIRMED", evidence_ids: ["evidence-1"], completed_at: "2026-09-24T15:30:00.000Z" };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "action", status: "COMPLETED" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await new Farm360Api("https://api.example", "session-token").completeAction("tenant / id", "action / id", payload);
+    expect(fetchMock).toHaveBeenCalledWith("https://api.example/v1/tenants/tenant%20%2F%20id/actions/action%20%2F%20id/outcome", { method: "POST", headers: { Authorization: "Bearer session-token", "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  });
+});

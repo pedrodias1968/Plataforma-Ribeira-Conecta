@@ -1,0 +1,298 @@
+import { useEffect, useRef, useState } from "react";
+import type { Farm360Api } from "../../api/client";
+import type {
+  FieldContext,
+  ProcessingJob,
+  TemporalComparison,
+  TimelineItem,
+} from "../../types/farm360";
+
+interface Props {
+  api: Farm360Api;
+  tenantId: string;
+  propertyId: string;
+  items: TimelineItem[];
+  fields: FieldContext[];
+  selectedProductId: string | null;
+  mode: "view" | "compare";
+  comparisonFieldId: string | null;
+  baselineProductId: string | null;
+  targetProductId: string | null;
+  comparison: TemporalComparison | null;
+  comparisonLoading: boolean;
+  canProcess?: boolean;
+  canEvaluate?: boolean;
+  onChanged: () => Promise<void>;
+  onDecisionChanged?: () => Promise<void>;
+  onSelectProduct: (productId: string) => void;
+  onModeChange: (mode: "view" | "compare") => void;
+  onComparisonFieldChange: (fieldId: string | null) => void;
+  onBaselineChange: (productId: string) => void;
+  onTargetChange: (productId: string) => void;
+}
+
+function dateLabel(item: TimelineItem) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "medium",
+    timeZone: "UTC",
+  }).format(new Date(item.acquisition_datetime));
+}
+
+function terminal(job: ProcessingJob) {
+  return ["SUCCEEDED", "FAILED", "BLOCKED", "CANCELLED"].includes(job.status);
+}
+
+export function TemporalPanel(props: Props) {
+  const {
+    items,
+    fields,
+    selectedProductId,
+    mode,
+    comparisonFieldId,
+    baselineProductId,
+    targetProductId,
+    comparison,
+    comparisonLoading,
+    canProcess = false,
+    canEvaluate = false,
+  } = props;
+  const [job, setJob] = useState<ProcessingJob | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const active = useRef(true);
+
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
+
+  const waitForJob = async (created: ProcessingJob) => {
+    let current = created;
+    setJob(current);
+    while (!terminal(current)) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      current = await props.api.job(props.tenantId, current.id);
+      if (!active.current) throw new Error("cancelled");
+      setJob(current);
+    }
+    if (current.status !== "SUCCEEDED" || !current.output_product_id) {
+      throw new Error(current.failure_code ?? current.status);
+    }
+    return current.output_product_id;
+  };
+
+  const ensureMasked = async (productId: string) => {
+    const product = items.find(
+      (item) => item.derived_product.id === productId,
+    )?.derived_product;
+    if (!product) throw new Error("missing product");
+    if (product.product_type === "NDVI_QUALITY_MASKED") return product.id;
+    return waitForJob(
+      await props.api.createQualityMaskedNdviJob(
+        props.tenantId,
+        props.propertyId,
+        product.id,
+      ),
+    );
+  };
+
+  const processComparison = async () => {
+    if (!baselineProductId || !targetProductId) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const baselineMaskedId = await ensureMasked(baselineProductId);
+      const targetMaskedId = await ensureMasked(targetProductId);
+      await waitForJob(
+        await props.api.createTemporalDeltaJob(
+          props.tenantId,
+          props.propertyId,
+          baselineMaskedId,
+          targetMaskedId,
+          comparisonFieldId ?? undefined,
+        ),
+      );
+      await props.onChanged();
+      setMessage("Comparação temporal processada com proveniência persistida.");
+    } catch (error) {
+      if (active.current) {
+        const reason = error instanceof Error ? error.message : "UNKNOWN";
+        setMessage(`DADO_INSUFICIENTE — processamento não concluído (${reason}).`);
+      }
+    } finally {
+      if (active.current) setBusy(false);
+    }
+  };
+
+  const evaluateDelta = async () => {
+    const productId = comparison?.comparison.delta_product_id;
+    if (!productId) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const result = await props.api.evaluateTemporalDelta(
+        props.tenantId,
+        props.propertyId,
+        productId,
+        props.comparisonFieldId || undefined,
+      );
+      if (result.decision.status === "ACTIONABLE") {
+        setMessage("Regra acionada. A decisão e a inspeção recomendada foram registradas.");
+      } else if (result.decision.status === "NO_TRIGGER") {
+        setMessage("Evidência avaliada. Nenhuma regra aplicável foi acionada.");
+      } else {
+        setMessage("Avaliação inconclusiva. Consulte os dados ausentes e limitações na decisão registrada.");
+      }
+      await props.onDecisionChanged?.();
+    } catch {
+      setMessage("Não foi possível avaliar o delta temporal.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (items.length === 0)
+    return (
+      <section>
+        <h2>Linha do tempo</h2>
+        <p>Sem dados disponíveis para comparação temporal.</p>
+      </section>
+    );
+  return (
+    <section className="temporal">
+      <h2>Linha do tempo</h2>
+      <p className="temporal-order">
+        Ordem: aquisição crescente. O padrão visual é o NDVI SUCCEEDED mais
+        recente.
+      </p>
+      <div className="timeline-items">
+        {items.map((item) => (
+          <button
+            type="button"
+            key={item.derived_product.id}
+            className={selectedProductId === item.derived_product.id ? "selected" : ""}
+            onClick={() => props.onSelectProduct(item.derived_product.id)}
+          >
+            <strong>{dateLabel(item)}</strong>
+            <span>
+              {item.derived_product.processing_status} · cobertura{" "}
+              {item.derived_product.statistics.coverage_percentage ?? "NULL"}%
+            </span>
+            <span>Nuvens: {item.cloud_cover ?? "UNKNOWN"}</span>
+          </button>
+        ))}
+      </div>
+      <div className="temporal-mode">
+        <button
+          type="button"
+          className={mode === "view" ? "selected" : ""}
+          onClick={() => props.onModeChange("view")}
+        >
+          Visualizar
+        </button>
+        <button
+          type="button"
+          className={mode === "compare" ? "selected" : ""}
+          onClick={() => props.onModeChange("compare")}
+        >
+          Comparar
+        </button>
+      </div>
+      {mode === "compare" && (
+        <div className="comparison-controls">
+          <label>
+            Escopo da comparação
+            <select
+              aria-label="Escopo da comparação"
+              value={comparisonFieldId ?? ""}
+              onChange={(event) =>
+                props.onComparisonFieldChange(event.target.value || null)
+              }
+            >
+              <option value="">Propriedade inteira</option>
+              {fields.map((field) => (
+                <option key={field.id} value={field.id}>
+                  Talhão: {field.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="muted">
+            {comparisonFieldId
+              ? "O delta será recortado pelo limite versionado do talhão selecionado."
+              : "O delta usará o limite da propriedade inteira."}
+          </p>
+          <label>
+            Base
+            <select
+              value={baselineProductId ?? ""}
+              onChange={(event) => props.onBaselineChange(event.target.value)}
+            >
+              {items.map((item) => (
+                <option key={item.derived_product.id} value={item.derived_product.id}>
+                  {dateLabel(item)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Target
+            <select
+              value={targetProductId ?? ""}
+              onChange={(event) => props.onTargetChange(event.target.value)}
+            >
+              {items.map((item) => (
+                <option key={item.derived_product.id} value={item.derived_product.id}>
+                  {dateLabel(item)}
+                </option>
+              ))}
+            </select>
+          </label>
+          {canProcess && (
+            <button
+              type="button"
+              disabled={busy || !baselineProductId || !targetProductId || baselineProductId === targetProductId}
+              onClick={() => void processComparison()}
+            >
+              {busy ? "Processando…" : "Gerar Δ NDVI com máscara de qualidade"}
+            </button>
+          )}
+          {job && <p>Job {job.job_type}: {job.status}</p>}
+          {message && <p role="status">{message}</p>}
+          {comparisonLoading && <p>Calculando comparação…</p>}
+          {!comparisonLoading && comparison && (
+            <div className="comparison-result">
+              <strong>{comparison.status}</strong>
+              <span>
+                Δ médio: {comparison.comparison.delta_mean ?? "INCONCLUSIVE"}
+              </span>
+              <span>
+                Pixels comparáveis:{" "}
+                {comparison.comparison.comparable_valid_pixels ?? "UNKNOWN"}
+              </span>
+              <span>
+                Cobertura comparável:{" "}
+                {comparison.comparison.comparable_coverage_percentage ?? "UNKNOWN"}%
+              </span>
+              <span>{comparison.comparison.classification}</span>
+              {canEvaluate && comparison.comparison.delta_product_id && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void evaluateDelta()}
+                >
+                  {busy ? "Avaliando…" : "Avaliar delta com regras"}
+                </button>
+              )}
+              {comparison.comparison.limitations.map((limitation) => (
+                <small key={limitation}>{limitation}</small>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}

@@ -1,0 +1,224 @@
+.farm360 {
+  display: flex;
+  height: 100vh;
+  background: var(--color-bg-primary);
+}
+
+.map-column {
+  flex: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.map-tools {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 10;
+}
+
+.map-tools label,
+.map-tools span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: var(--font-size-body-sm);
+  color: var(--color-text-primary);
+}
+
+.map-tools input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-accent-primary);
+}
+
+.legend,
+.delta-legend {
+  padding: 8px 12px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: var(--font-size-body-sm);
+  color: var(--color-text-secondary);
+}
+
+.legend i,
+.delta-legend i {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+
+.legend i {
+  background: var(--color-accent-error);
+}
+
+.legend b {
+  color: var(--color-accent-primary);
+  margin: 0 6px;
+}
+
+.delta-legend {
+  margin-top: 4px;
+}
+
+aside {
+  width: 400px;
+  min-width: 320px;
+  max-width: 480px;
+  background: var(--color-bg-secondary);
+  border-left: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.property-summary {
+  padding: 24px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-tertiary);
+}
+
+.property-summary .eyebrow {
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-label);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-label);
+  color: var(--color-text-secondary);
+  margin-bottom: 8px;
+}
+
+.property-summary h1 {
+  font-size: var(--font-size-h4);
+  font-weight: var(--font-weight-header);
+  color: var(--color-text-primary);
+  margin: 0 0 12px;
+  line-height: var(--line-height-header);
+}
+
+.property-summary-facts {
+  font-size: var(--font-size-body-sm);
+  color: var(--color-text-secondary);
+  margin-bottom: 16px;
+  line-height: var(--line-height-body);
+}
+
+.property-summary dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 12px;
+  margin-bottom: 20px;
+}
+
+.property-summary dt {
+  font-size: var(--font-size-body-sm);
+  font-weight: var(--font-weight-label);
+  color: var(--color-text-secondary);
+}
+
+.property-summary dd {
+  font-size: var(--font-size-body-sm);
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.property-summary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.property-summary-actions button {
+  flex: 1;
+  min-width: 120px;
+  padding: 10px 16px;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-body-sm);
+  font-weight: var(--font-weight-label);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.property-summary-actions button:hover {
+  border-color: var(--color-accent-primary);
+  background: rgba(34, 197, 94, 0.05);
+}
+
+.property-summary-actions button:active {
+  transform: scale(0.98);
+}
+
+.context-availability {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--font-size-body-sm);
+  color: var(--color-text-secondary);
+}
+
+.context-availability p {
+  margin: 0;
+  line-height: var(--line-height-body);
+}
+
+.property-summary dl,
+.context-availability dl {
+  margin-top: 8px;
+}
+
+.property-summary dl dt,
+.context-availability dl dt {
+  color: var(--color-text-primary);
+  margin-bottom: 4px;
+}
+
+.property-summary dl dd,
+.context-availability dl dd {
+  margin: 0 0 12px;
+}
+
+.empty-state {
+  padding: 32px 24px;
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+
+.empty-state p {
+  margin: 0 0 8px;
+  font-size: var(--font-size-body);
+}
+
+.empty-state-detail {
+  font-size: var(--font-size-body-sm);
+  color: var(--color-text-muted);
+}
+
+.state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 48px;
+  text-align: center;
+  color: var(--color-text-primary);
+}
+
+.state p {
+  font-size: var(--font-size-body-lg);
+  max-width: 600px;
+  line-height: var(--line-height-body);
+}

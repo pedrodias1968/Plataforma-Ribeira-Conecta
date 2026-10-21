@@ -6,9 +6,13 @@ __pycache__/
 .venv/
 venv/
 dist/
+node_modules/
 build/
 *.egg-info/
 *.sqlite3
 *.db
 .env
+.local/
+frontend/test-results/
+frontend/e2e-artifacts/
 .DS_Store

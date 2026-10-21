@@ -15,6 +15,7 @@ from .models import (
     Decision,
     Evidence,
     Observation,
+    PilotFeedback,
     Property,
     RuleDefinition,
     Source,
@@ -29,7 +30,7 @@ CREATE TABLE IF NOT EXISTS tenants (
 );
 CREATE TABLE IF NOT EXISTS properties (
   id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES tenants(id),
-  name TEXT NOT NULL, geometry_geojson TEXT, geometry_crs TEXT,
+  name TEXT NOT NULL, geometry_geojson TEXT, geometry_crs TEXT, boundary_source TEXT,
   classification TEXT NOT NULL, created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_properties_tenant ON properties(tenant_id);
@@ -65,6 +66,10 @@ CREATE TABLE IF NOT EXISTS rules (
   name TEXT NOT NULL, authority TEXT NOT NULL, metric TEXT NOT NULL, operator TEXT NOT NULL,
   threshold REAL NOT NULL, unit TEXT NOT NULL, severity TEXT NOT NULL, status TEXT NOT NULL,
   approved_by TEXT, valid_from TEXT NOT NULL, valid_until TEXT, created_at TEXT NOT NULL,
+  scope_type TEXT NOT NULL DEFAULT 'TENANT', scope_property_id TEXT REFERENCES properties(id),
+  scope_asset_id TEXT,
+  scope_field_id TEXT,
+  scope_customer_id TEXT,
   PRIMARY KEY (id, version)
 );
 CREATE INDEX IF NOT EXISTS idx_rules_active ON rules(tenant_id, metric, status, version);
@@ -74,7 +79,9 @@ CREATE TABLE IF NOT EXISTS decisions (
   classification TEXT NOT NULL, status TEXT NOT NULL, evidence_ids_json TEXT NOT NULL,
   rule_id TEXT, rule_version INTEGER, model_id TEXT, model_version TEXT,
   confidence REAL, limitations_json TEXT NOT NULL, missing_data_json TEXT NOT NULL,
-  conflicts_json TEXT NOT NULL, recommended_action_json TEXT, created_at TEXT NOT NULL
+  conflicts_json TEXT NOT NULL, recommended_action_json TEXT, subject_asset_id TEXT, subject_field_id TEXT,
+  subject_field_boundary_version INTEGER, subject_field_boundary_checksum TEXT, selected_rule_scope_type TEXT, subject_customer_id TEXT,
+  created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_decisions_property ON decisions(tenant_id, property_id, created_at);
 CREATE TABLE IF NOT EXISTS alerts (
@@ -86,8 +93,18 @@ CREATE TABLE IF NOT EXISTS alerts (
 CREATE TABLE IF NOT EXISTS actions (
   id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES tenants(id),
   action_type TEXT NOT NULL, status TEXT NOT NULL, responsible_user_id TEXT,
-  deadline TEXT, decision_id TEXT NOT NULL REFERENCES decisions(id), created_at TEXT NOT NULL
+  deadline TEXT, decision_id TEXT NOT NULL REFERENCES decisions(id), created_at TEXT NOT NULL,
+  completed_at TEXT, completed_by TEXT, outcome_detail TEXT, outcome_classification TEXT,
+  outcome_evidence_ids_json TEXT NOT NULL DEFAULT '[]'
 );
+CREATE TABLE IF NOT EXISTS pilot_feedback (
+  id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES tenants(id),
+  property_id TEXT REFERENCES properties(id), submitted_by TEXT NOT NULL,
+  feedback_type TEXT NOT NULL, page TEXT NOT NULL, feature_id TEXT NOT NULL,
+  message TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pilot_feedback_tenant_created
+  ON pilot_feedback(tenant_id, created_at DESC);
 CREATE TABLE IF NOT EXISTS data_quality_events (
   id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES tenants(id), property_id TEXT,
   source_id TEXT, event_type TEXT NOT NULL, details_json TEXT NOT NULL, created_at TEXT NOT NULL
@@ -117,6 +134,21 @@ class SQLiteStore:
         self.connection.execute("PRAGMA foreign_keys = ON")
         self._transaction_depth = 0
         self.connection.executescript(SCHEMA)
+        self._ensure_column("rules", "scope_field_id", "TEXT")
+        self._ensure_column("decisions", "subject_field_id", "TEXT")
+        self._ensure_column("decisions", "subject_field_boundary_version", "INTEGER")
+        self._ensure_column("decisions", "subject_field_boundary_checksum", "TEXT")
+
+    def _ensure_column(self, table: str, column: str, definition: str) -> None:
+        columns = {
+            row["name"]
+            for row in self.connection.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+        if column not in columns:
+            self.connection.execute(
+                f"ALTER TABLE {table} ADD COLUMN {column} {definition}"
+            )
+            self.connection.commit()
 
     def close(self) -> None:
         self.connection.close()
@@ -164,11 +196,12 @@ class SQLiteStore:
             is not None
         )
 
-    def create_property(self, item: Property) -> Property:
+    def create_property(self, item: Property, *, actor: str = "user") -> Property:
+        del actor  # SQLite has no boundary-history table; retain API parity in tests.
         if not self.tenant_exists(item.tenant_id):
             raise TenantBoundaryError("tenant does not exist")
         self._insert(
-            "INSERT INTO properties(id,tenant_id,name,geometry_geojson,geometry_crs,classification,created_at) VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO properties(id,tenant_id,name,geometry_geojson,geometry_crs,boundary_source,classification,created_at) VALUES (?,?,?,?,?,?,?,?)",
             (
                 item.id,
                 item.tenant_id,
@@ -177,6 +210,7 @@ class SQLiteStore:
                 if item.geometry_geojson is not None
                 else None,
                 item.geometry_crs,
+                item.boundary_source,
                 item.classification.value,
                 item.created_at,
             ),
@@ -198,7 +232,19 @@ class SQLiteStore:
             row["geometry_crs"],
             DataClassification(row["classification"]),
             row["created_at"],
+            row["boundary_source"],
         )
+
+    def list_properties(self, tenant_id: str) -> list[Property]:
+        rows = self.connection.execute(
+            "SELECT id FROM properties WHERE tenant_id = ? ORDER BY created_at DESC, id",
+            (tenant_id,),
+        ).fetchall()
+        return [
+            item
+            for row in rows
+            if (item := self.get_property(tenant_id, str(row["id"]))) is not None
+        ]
 
     def create_source(self, item: Source) -> Source:
         if not self.tenant_exists(item.tenant_id):
@@ -363,54 +409,123 @@ class SQLiteStore:
             row["created_at"],
         )
 
-    def active_rule(self, tenant_id: str, metric: str) -> RuleDefinition | None:
+    def active_rules(
+        self,
+        tenant_id: str,
+        metric: str,
+        property_id: str | None = None,
+        asset_id: str | None = None,
+        field_id: str | None = None,
+    ) -> list[RuleDefinition]:
+        """Return every currently applicable rule; callers handle precedence.
+
+        Customer applicability is intentionally derived from the temporal link,
+        never from a customer ID supplied by an evaluation request.
+        """
+        now = datetime.now(timezone.utc)
+        customer_ids: set[str] = set()
+        if property_id is not None:
+            links = self.connection.execute(
+                "SELECT customer_id,valid_from,valid_until FROM customer_property "
+                "WHERE tenant_id=? AND property_id=?",
+                (tenant_id, property_id),
+            ).fetchall()
+            for link in links:
+                try:
+                    starts = datetime.fromisoformat(link["valid_from"])
+                    ends = (
+                        datetime.fromisoformat(link["valid_until"])
+                        if link["valid_until"]
+                        else None
+                    )
+                except ValueError:
+                    continue
+                if (
+                    starts.tzinfo is not None
+                    and (ends is None or ends.tzinfo is not None)
+                    and starts <= now
+                    and (ends is None or now < ends)
+                ):
+                    customer_ids.add(str(link["customer_id"]))
+
         rows = self.connection.execute(
-            "SELECT * FROM rules WHERE tenant_id = ? AND metric = ? AND status = 'ACTIVE' ORDER BY version DESC",
+            "SELECT * FROM rules WHERE tenant_id=? AND metric=? AND status='ACTIVE' "
+            "ORDER BY version DESC",
             (tenant_id, metric),
         ).fetchall()
-        now = datetime.now(timezone.utc)
-        row = None
-        for candidate in rows:
+        result: list[RuleDefinition] = []
+        for row in rows:
             try:
-                valid_from = datetime.fromisoformat(candidate["valid_from"])
-                valid_until = (
-                    datetime.fromisoformat(candidate["valid_until"])
-                    if candidate["valid_until"]
+                starts = datetime.fromisoformat(row["valid_from"])
+                ends = (
+                    datetime.fromisoformat(row["valid_until"])
+                    if row["valid_until"]
                     else None
                 )
             except ValueError:
                 continue
-            if (
-                valid_from.tzinfo is not None
-                and (valid_until is None or valid_until.tzinfo is not None)
-                and valid_from <= now
-                and (valid_until is None or now < valid_until)
+            if not (
+                starts.tzinfo is not None
+                and (ends is None or ends.tzinfo is not None)
+                and starts <= now
+                and (ends is None or now < ends)
             ):
-                row = candidate
-                break
-        if row is None:
-            return None
-        return RuleDefinition(
-            row["id"],
-            row["tenant_id"],
-            row["version"],
-            row["name"],
-            RuleAuthority(row["authority"]),
-            row["metric"],
-            row["operator"],
-            row["threshold"],
-            row["unit"],
-            row["severity"],
-            row["status"],
-            row["approved_by"],
-            row["valid_from"],
-            row["valid_until"],
-            row["created_at"],
+                continue
+            scope = row["scope_type"]
+            applicable = (
+                scope == "TENANT"
+                or (scope == "PROPERTY" and row["scope_property_id"] == property_id)
+                or (scope == "ASSET" and row["scope_asset_id"] == asset_id)
+                or (scope == "FIELD" and row["scope_field_id"] == field_id)
+                or (scope == "CUSTOMER" and row["scope_customer_id"] in customer_ids)
+            )
+            if not applicable:
+                continue
+            result.append(
+                RuleDefinition(
+                    row["id"],
+                    row["tenant_id"],
+                    row["version"],
+                    row["name"],
+                    RuleAuthority(row["authority"]),
+                    row["metric"],
+                    row["operator"],
+                    row["threshold"],
+                    row["unit"],
+                    row["severity"],
+                    row["status"],
+                    row["approved_by"],
+                    row["valid_from"],
+                    row["valid_until"],
+                    row["created_at"],
+                    row["scope_type"],
+                    row["scope_property_id"],
+                    row["scope_asset_id"],
+                    row["scope_field_id"],
+                    row["scope_customer_id"],
+                )
+            )
+        return result
+
+    def active_rule(
+        self,
+        tenant_id: str,
+        metric: str,
+        property_id: str | None = None,
+        asset_id: str | None = None,
+        field_id: str | None = None,
+    ) -> RuleDefinition | None:
+        rules = self.active_rules(tenant_id, metric, property_id, asset_id, field_id)
+        priority = {"ASSET": 0, "FIELD": 1, "PROPERTY": 2, "CUSTOMER": 3, "TENANT": 4}
+        return (
+            min(rules, key=lambda rule: (priority[rule.scope_type], -rule.version))
+            if rules
+            else None
         )
 
     def create_rule(self, item: RuleDefinition) -> RuleDefinition:
         self._insert(
-            "INSERT INTO rules(id,tenant_id,version,name,authority,metric,operator,threshold,unit,severity,status,approved_by,valid_from,valid_until,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO rules(id,tenant_id,version,name,authority,metric,operator,threshold,unit,severity,status,approved_by,valid_from,valid_until,created_at,scope_type,scope_property_id,scope_asset_id,scope_field_id,scope_customer_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 item.id,
                 item.tenant_id,
@@ -427,6 +542,11 @@ class SQLiteStore:
                 item.valid_from,
                 item.valid_until,
                 item.created_at,
+                item.scope_type,
+                item.scope_property_id,
+                item.scope_asset_id,
+                item.scope_field_id,
+                item.scope_customer_id,
             ),
         )
         return item
@@ -434,8 +554,8 @@ class SQLiteStore:
     def create_decision(self, item: Decision) -> Decision:
         self._insert(
             """INSERT INTO decisions(id,tenant_id,property_id,conclusion,classification,status,evidence_ids_json,rule_id,rule_version,
-               model_id,model_version,confidence,limitations_json,missing_data_json,conflicts_json,recommended_action_json,created_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               model_id,model_version,confidence,limitations_json,missing_data_json,conflicts_json,recommended_action_json,subject_asset_id,subject_field_id,subject_field_boundary_version,subject_field_boundary_checksum,selected_rule_scope_type,subject_customer_id,created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 item.id,
                 item.tenant_id,
@@ -455,10 +575,74 @@ class SQLiteStore:
                 json.dumps(item.recommended_action)
                 if item.recommended_action is not None
                 else None,
+                item.subject_asset_id,
+                item.subject_field_id,
+                item.subject_field_boundary_version,
+                item.subject_field_boundary_checksum,
+                item.selected_rule_scope_type,
+                item.subject_customer_id,
                 item.created_at,
             ),
         )
         return item
+
+    def decision_history_for_property(
+        self, tenant_id: str, property_id: str
+    ) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            """SELECT d.*,a.id AS action_id,a.status AS action_status,
+                      a.completed_at,a.completed_by,a.outcome_detail,
+                      a.outcome_classification,a.outcome_evidence_ids_json
+                 FROM decisions d LEFT JOIN actions a ON a.decision_id=d.id
+                WHERE d.tenant_id=? AND d.property_id=?
+                ORDER BY d.created_at DESC""",
+            (tenant_id, property_id),
+        ).fetchall()
+        return [
+            {
+                "id": row["id"],
+                "property_id": row["property_id"],
+                "subject_asset_id": row["subject_asset_id"],
+                "subject_field_id": row["subject_field_id"],
+                "subject_field_boundary_version": row["subject_field_boundary_version"],
+                "subject_field_boundary_checksum": row[
+                    "subject_field_boundary_checksum"
+                ],
+                "selected_rule_scope_type": row["selected_rule_scope_type"],
+                "subject_customer_id": row["subject_customer_id"],
+                "conclusion": row["conclusion"],
+                "classification": row["classification"],
+                "status": row["status"],
+                "evidence_ids": json.loads(row["evidence_ids_json"]),
+                "rule_id": row["rule_id"],
+                "rule_version": row["rule_version"],
+                "limitations": json.loads(row["limitations_json"]),
+                "missing_data": json.loads(row["missing_data_json"]),
+                "conflicts": json.loads(row["conflicts_json"]),
+                "recommended_action": (
+                    json.loads(row["recommended_action_json"])
+                    if row["recommended_action_json"]
+                    else None
+                ),
+                "created_at": row["created_at"],
+                "action": (
+                    {
+                        "id": row["action_id"],
+                        "status": row["action_status"],
+                        "completed_at": row["completed_at"],
+                        "completed_by": row["completed_by"],
+                        "outcome_detail": row["outcome_detail"],
+                        "outcome_classification": row["outcome_classification"],
+                        "outcome_evidence_ids": json.loads(
+                            row["outcome_evidence_ids_json"]
+                        ),
+                    }
+                    if row["action_id"]
+                    else None
+                ),
+            }
+            for row in rows
+        ]
 
     def create_alert(self, item: Alert) -> Alert:
         self._insert(
@@ -488,6 +672,70 @@ class SQLiteStore:
                 item.responsible_user_id,
                 item.deadline,
                 item.decision_id,
+                item.created_at,
+            ),
+        )
+        return item
+
+    def complete_action(
+        self,
+        tenant_id: str,
+        action_id: str,
+        *,
+        actor: str,
+        detail: str,
+        classification: str,
+        evidence_ids: list[str],
+        completed_at: str,
+    ) -> None:
+        if not detail.strip():
+            raise ValueError("action outcome detail is required")
+        action = self.connection.execute(
+            "SELECT id FROM actions WHERE id=? AND tenant_id=? AND status='OPEN'",
+            (action_id, tenant_id),
+        ).fetchone()
+        if action is None:
+            raise LookupError("open action is unavailable in tenant")
+        if evidence_ids:
+            marks = ",".join("?" for _ in evidence_ids)
+            count = self.connection.execute(
+                f"SELECT count(*) FROM evidence WHERE tenant_id=? AND id IN ({marks})",
+                [tenant_id, *evidence_ids],
+            ).fetchone()[0]
+            if count != len(set(evidence_ids)):
+                raise ValueError("action outcome evidence must belong to tenant")
+        self._insert(
+            "UPDATE actions SET status='COMPLETED',completed_at=?,completed_by=?,outcome_detail=?,outcome_classification=?,outcome_evidence_ids_json=? WHERE id=? AND tenant_id=?",
+            (
+                completed_at,
+                actor,
+                detail,
+                classification,
+                json.dumps(evidence_ids),
+                action_id,
+                tenant_id,
+            ),
+        )
+
+    def create_pilot_feedback(self, item: PilotFeedback) -> PilotFeedback:
+        if (
+            item.property_id
+            and self.get_property(item.tenant_id, item.property_id) is None
+        ):
+            raise LookupError("feedback property is unavailable in tenant")
+        self._insert(
+            """INSERT INTO pilot_feedback(
+                   id,tenant_id,property_id,submitted_by,feedback_type,page,feature_id,message,created_at
+                 ) VALUES (?,?,?,?,?,?,?,?,?)""",
+            (
+                item.id,
+                item.tenant_id,
+                item.property_id,
+                item.submitted_by,
+                item.feedback_type,
+                item.page,
+                item.feature_id,
+                item.message,
                 item.created_at,
             ),
         )

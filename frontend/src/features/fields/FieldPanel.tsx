@@ -1,0 +1,313 @@
+import { useMemo, useState, type FormEvent } from "react";
+import type { Geometry } from "geojson";
+
+import type { Farm360Api } from "../../api/client";
+import { Status } from "../../components/Status";
+import { customerDateLabel, customerSourceLabel } from "../../presentation";
+import type { FieldContext } from "../../types/farm360";
+import { MapCanvas } from "../map/MapCanvas";
+import "./FieldPanel.css";
+
+type Point = [number, number];
+
+function isFieldGeometry(value: Geometry): boolean {
+  return value.type === "Polygon" || value.type === "MultiPolygon";
+}
+
+function drawnGeometry(points: Point[]): Geometry {
+  return { type: "Polygon", coordinates: [[...points, points[0]]] };
+}
+
+function FieldRegistration({ api, tenantId, propertyId, propertyGeometry, apiBaseUrl, token, onCreated }: {
+  api: Farm360Api;
+  tenantId: string;
+  propertyId: string;
+  propertyGeometry: Geometry | null;
+  apiBaseUrl: string;
+  token: string;
+  onCreated: (field: FieldContext) => void;
+}) {
+  const [name, setName] = useState("");
+  const [status, setStatus] = useState("ACTIVE");
+  const [geometry, setGeometry] = useState("");
+  const [drawPoints, setDrawPoints] = useState<Point[]>([]);
+  const [sourceReference, setSourceReference] = useState("");
+  const [observedAt, setObservedAt] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const draftGeometry = useMemo(
+    () => drawPoints.length >= 3 ? drawnGeometry(drawPoints) : null,
+    [drawPoints],
+  );
+
+  const addPoint = (point: Point) => {
+    const next = [...drawPoints, point];
+    setDrawPoints(next);
+    setGeometry(next.length >= 3 ? JSON.stringify(drawnGeometry(next)) : "");
+    setMessage(null);
+  };
+
+  const undoPoint = () => {
+    const next = drawPoints.slice(0, -1);
+    setDrawPoints(next);
+    setGeometry(next.length >= 3 ? JSON.stringify(drawnGeometry(next)) : "");
+  };
+
+  const clearDrawing = () => {
+    setDrawPoints([]);
+    setGeometry("");
+    setMessage(null);
+  };
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setMessage(null);
+    let geometryGeojson: Geometry;
+    const observed = new Date(observedAt);
+    try {
+      geometryGeojson = JSON.parse(geometry) as Geometry;
+      if (!name.trim() || !sourceReference.trim() || !isFieldGeometry(geometryGeojson) || Number.isNaN(observed.getTime())) {
+        throw new Error("invalid field registration");
+      }
+    } catch {
+      setMessage("DADO_INSUFICIENTE — informe nome, fonte, horário e desenhe o talhão ou forneça GeoJSON Polygon/MultiPolygon em WGS84.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const field = await api.registerField(tenantId, propertyId, {
+        name: name.trim(),
+        status,
+        geometry_geojson: geometryGeojson,
+        geometry_crs: "EPSG:4326",
+        source_reference: sourceReference.trim(),
+        observed_at: observed.toISOString(),
+        classification: "MANUAL_CONFIRMED",
+      });
+      onCreated(field);
+      setName("");
+      setStatus("ACTIVE");
+      setGeometry("");
+      setDrawPoints([]);
+      setSourceReference("");
+      setObservedAt("");
+      setMessage("Talhão registrado com fonte e evidência próprias.");
+    } catch {
+      setMessage("Não foi possível registrar o talhão. Confirme a contenção no limite atual, a permissão e os dados de origem.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <details className="field-registration">
+      <summary>Registrar talhão</summary>
+      <p>Registre somente geometria e contexto factual. O talhão não é um limite legal, declaração de cultura, observação de solo ou recomendação agronômica.</p>
+      {propertyGeometry && (
+        <section className="field-drawing">
+          <p>Selecione pelo menos três vértices no mapa. O desenho é provisório até o envio do formulário.</p>
+          <MapCanvas
+            aoi={draftGeometry ?? propertyGeometry}
+            apiBaseUrl={apiBaseUrl}
+            tileUrl={null}
+            deltaTileUrl={null}
+            ndviEnabled={false}
+            deltaEnabled={false}
+            token={token}
+            onMapClick={addPoint}
+          />
+          <p>{drawPoints.length} vértice(s) selecionado(s).</p>
+          <div className="field-drawing-actions">
+            <button type="button" onClick={undoPoint} disabled={drawPoints.length === 0}>Desfazer último ponto</button>
+            <button type="button" onClick={clearDrawing} disabled={drawPoints.length === 0}>Limpar desenho</button>
+          </div>
+        </section>
+      )}
+      <form onSubmit={submit}>
+        <label>Nome<input value={name} onChange={(event) => setName(event.target.value)} maxLength={200} required /></label>
+        <label>Status informado<select value={status} onChange={(event) => setStatus(event.target.value)}><option value="ACTIVE">Ativo</option><option value="INACTIVE">Inativo</option><option value="UNKNOWN">Ainda não informado</option></select></label>
+        <label>Fonte ou referência de confirmação<input value={sourceReference} onChange={(event) => setSourceReference(event.target.value)} maxLength={2000} required /></label>
+        <label>Observado em<input aria-label="Talhão observado em" type="datetime-local" value={observedAt} onChange={(event) => setObservedAt(event.target.value)} required /></label>
+        <label>GeoJSON técnico (WGS84)<textarea value={geometry} onChange={(event) => { setGeometry(event.target.value); setDrawPoints([]); }} placeholder='{"type":"Polygon",...}' required /></label>
+        <p className="field-registration-note">A API verifica se toda a geometria está contida no limite persistido. Nada é recortado ou inferido pelo navegador.</p>
+        <button type="submit" disabled={saving}>{saving ? "Registrando…" : "Registrar talhão"}</button>
+      </form>
+      {message && <p role="alert">{message}</p>}
+    </details>
+  );
+}
+
+function FieldRuleEvaluation({ api, tenantId, field, onEvaluated }: {
+  api: Farm360Api;
+  tenantId: string;
+  field: FieldContext;
+  onEvaluated: () => Promise<void> | void;
+}) {
+  const [evaluating, setEvaluating] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const evaluate = async () => {
+    setEvaluating(true);
+    setMessage(null);
+    try {
+      await api.evaluateField(tenantId, field.id);
+      await onEvaluated();
+      setMessage("Avaliação registrada no histórico desta propriedade. Consulte a decisão e suas limitações em Riscos e decisões.");
+    } catch {
+      setMessage("Não foi possível registrar a avaliação agora. Confirme a permissão e tente novamente.");
+    } finally {
+      setEvaluating(false);
+    }
+  };
+  return <details className="field-rule-evaluation"><summary>Avaliar regras para este talhão</summary><p>Esta ação usa o talhão e a versão atual de seu limite somente como contexto de aplicabilidade. Ela não transforma o cadastro em observação, medição ou diagnóstico.</p><button type="button" disabled={evaluating} onClick={() => void evaluate()}>{evaluating ? "Avaliando…" : "Avaliar regras"}</button>{message && <p role="status">{message}</p>}</details>;
+}
+
+function FieldBoundaryCorrection({ field, api, tenantId, propertyId, propertyGeometry, apiBaseUrl, token, onCorrected }: {
+  field: FieldContext;
+  api: Farm360Api;
+  tenantId: string;
+  propertyId: string;
+  propertyGeometry: Geometry | null;
+  apiBaseUrl: string;
+  token: string;
+  onCorrected: (field: FieldContext) => void;
+}) {
+  const [geometry, setGeometry] = useState(JSON.stringify(field.geometry_geojson));
+  const [drawPoints, setDrawPoints] = useState<Point[]>([]);
+  const [sourceReference, setSourceReference] = useState("");
+  const [observedAt, setObservedAt] = useState("");
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const draftGeometry = useMemo(
+    () => drawPoints.length >= 3 ? drawnGeometry(drawPoints) : field.geometry_geojson,
+    [drawPoints, field.geometry_geojson],
+  );
+
+  const addPoint = (point: Point) => {
+    const next = [...drawPoints, point];
+    setDrawPoints(next);
+    if (next.length >= 3) setGeometry(JSON.stringify(drawnGeometry(next)));
+  };
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setMessage(null);
+    try {
+      const parsed = JSON.parse(geometry) as Geometry;
+      if (!isFieldGeometry(parsed)) throw new Error("geometry");
+      const corrected = await api.correctFieldBoundary(tenantId, propertyId, field.id, {
+        expected_boundary_version: field.boundary_version,
+        expected_boundary_checksum: field.boundary_checksum,
+        geometry_geojson: parsed,
+        geometry_crs: "EPSG:4326",
+        source_reference: sourceReference.trim(),
+        observed_at: new Date(observedAt).toISOString(),
+        classification: "MANUAL_CONFIRMED",
+        reason: reason.trim(),
+      });
+      onCorrected(corrected);
+      setMessage(`Limite corrigido como versão ${corrected.boundary_version}.`);
+    } catch {
+      setMessage("Não foi possível corrigir o limite. Revise geometria, fonte, data e motivo.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <details className="field-correction">
+      <summary>Corrigir limite</summary>
+      <p className="field-registration-note">A correção cria uma nova versão imutável. O limite anterior e suas evidências são preservados.</p>
+      <div className="field-drawing">
+        <MapCanvas
+          aoi={drawPoints.length >= 3 ? draftGeometry : propertyGeometry ?? field.geometry_geojson}
+          apiBaseUrl={apiBaseUrl}
+          tileUrl={null}
+          deltaTileUrl={null}
+          ndviEnabled={false}
+          deltaEnabled={false}
+          token={token}
+          assets={[]}
+          fields={[]}
+          selectionLocation={null}
+          onMapClick={addPoint}
+        />
+        <div className="field-drawing-actions">
+          <button type="button" onClick={() => { setDrawPoints([]); setGeometry(JSON.stringify(field.geometry_geojson)); }}>Restaurar limite atual</button>
+        </div>
+        <small>Para redesenhar, clique três ou mais pontos dentro da propriedade. O servidor valida a contenção.</small>
+      </div>
+      <form onSubmit={submit}>
+        <label>Novo limite WGS84 (GeoJSON)<textarea value={geometry} onChange={(event) => { setGeometry(event.target.value); setDrawPoints([]); }} required /></label>
+        <label>Fonte factual<input value={sourceReference} onChange={(event) => setSourceReference(event.target.value)} required /></label>
+        <label>Data da observação<input type="datetime-local" value={observedAt} onChange={(event) => setObservedAt(event.target.value)} required /></label>
+        <label>Motivo da correção<textarea value={reason} onChange={(event) => setReason(event.target.value)} required /></label>
+        <button type="submit" disabled={saving}>{saving ? "Salvando…" : "Salvar nova versão"}</button>
+      </form>
+      {message && <p><Status value={message.startsWith("Limite corrigido") ? "CONFIRMED" : "UNKNOWN"} /> {message}</p>}
+    </details>
+  );
+}
+
+export function FieldPanel({ fields, loadError = false, api, tenantId, propertyId, propertyGeometry = null, apiBaseUrl = "", token = "", canManageFields = false, canEvaluateFields = false, onCreated, onCorrected, onEvaluated }: {
+  fields: FieldContext[];
+  loadError?: boolean;
+  api?: Farm360Api;
+  tenantId?: string;
+  propertyId?: string;
+  propertyGeometry?: Geometry | null;
+  apiBaseUrl?: string;
+  token?: string;
+  canManageFields?: boolean;
+  canEvaluateFields?: boolean;
+  onCreated?: (field: FieldContext) => void;
+  onCorrected?: (field: FieldContext) => void;
+  onEvaluated?: () => Promise<void> | void;
+}) {
+  return (
+    <section className="field-panel">
+      <h2>Talhões confirmados</h2>
+      <p>Geometrias confirmadas para contexto espacial. Nenhum cultivo, condição ou diagnóstico é inferido.</p>
+      {loadError && <p><Status value="UNKNOWN" /> Não foi possível consultar os talhões autorizados.</p>}
+      {!loadError && fields.length === 0 && <p><Status value="DADO_INSUFICIENTE" /> — não há talhão confirmado para esta propriedade.</p>}
+      <div className="field-list">
+        {fields.map((field) => (
+          <article key={field.id}>
+            <h3>{field.name}</h3>
+            <p>Status informado: {field.status}</p>
+            <p>Fonte: {customerSourceLabel(field.source_reference)}</p>
+            <p>Observado em: {customerDateLabel(field.observed_at)}</p>
+            <details>
+              <summary>Detalhes técnicos e proveniência</summary>
+              <dl>
+                <dt>Classificação</dt><dd>{field.classification}</dd>
+                <dt>CRS</dt><dd>{field.geometry_crs}</dd>
+                <dt>Versão do limite</dt><dd>{field.boundary_version}</dd>
+                <dt>Checksum</dt><dd>{field.boundary_checksum}</dd>
+                <dt>Evidência</dt><dd>{field.evidence_id}</dd>
+              </dl>
+            </details>
+            {canEvaluateFields && api && tenantId && onEvaluated && (
+              <FieldRuleEvaluation api={api} tenantId={tenantId} field={field} onEvaluated={onEvaluated} />
+            )}
+            {canManageFields && api && tenantId && propertyId && onCorrected && (
+              <FieldBoundaryCorrection field={field} api={api} tenantId={tenantId} propertyId={propertyId} propertyGeometry={propertyGeometry} apiBaseUrl={apiBaseUrl} token={token} onCorrected={onCorrected} />
+            )}
+          </article>
+        ))}
+      </div>
+      {canManageFields && api && tenantId && propertyId && onCreated && (
+        <FieldRegistration
+          api={api}
+          tenantId={tenantId}
+          propertyId={propertyId}
+          propertyGeometry={propertyGeometry}
+          apiBaseUrl={apiBaseUrl}
+          token={token}
+          onCreated={onCreated}
+        />
+      )}
+    </section>
+  );
+}

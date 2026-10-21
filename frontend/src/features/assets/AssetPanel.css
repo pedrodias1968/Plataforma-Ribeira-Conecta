@@ -1,0 +1,110 @@
+.asset-list {
+  display: grid;
+  gap: 8px;
+}
+.asset-list button {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text-primary);
+  padding: 12px;
+  text-align: left;
+  font-size: var(--font-size-body-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.asset-list button:hover {
+  border-color: var(--color-accent-primary);
+  background: var(--color-bg-tertiary);
+}
+.asset-list button:active {
+  transform: scale(0.98);
+}
+.asset-list button.selected {
+  background: var(--color-bg-tertiary);
+  border-color: var(--color-accent-primary);
+}
+.asset-list button.selected::after {
+  content: "•";
+  float: right;
+  color: var(--color-accent-primary);
+  font-size: 20px;
+  line-height: 1;
+}
+.asset-list span {
+  color: var(--color-text-secondary);
+  display: block;
+  font-size: var(--font-size-xmicro);
+  margin-top: 4px;
+}
+.asset-detail {
+  margin-top: 16px;
+}
+.empty-state {
+  padding: 24px;
+  text-align: center;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-tertiary);
+  border-radius: 6px;
+}
+.empty-state p {
+  margin: 0;
+  font-size: var(--font-size-body-sm);
+}
+.asset-registration {
+  border-top: 1px solid var(--color-border);
+  margin-top: 24px;
+  padding-top: 24px;
+}
+.asset-registration form { display: grid; gap: 12px; }
+.asset-registration label {
+  display: grid;
+  font-size: var(--font-size-body-sm);
+  gap: 6px;
+  color: var(--color-text-primary);
+}
+.asset-registration fieldset {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+}
+.asset-registration fieldset legend {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-body-sm);
+  padding: 0 8px;
+}
+.asset-registration-note {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-body-sm);
+}
+.asset-location-picker-note {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-body-sm);
+  margin: 8px 0;
+}
+.asset-location-picker {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  height: 280px;
+  overflow: hidden;
+  background: var(--color-bg-primary);
+}
+.asset-location-picker .map-frame { height: 100%; }
+.asset-rule-evaluation {
+  border-top: 1px solid var(--color-border);
+  margin-top: 16px;
+  padding-top: 16px;
+}
+.asset-rule-evaluation p { color: var(--color-text-secondary); font-size: var(--font-size-body-sm); }
+.asset-rule-evaluation summary {
+  cursor: pointer;
+  font-weight: var(--font-weight-subheader);
+  font-size: var(--font-size-body-sm);
+  margin-bottom: 12px;
+  display: block;
+}
+.asset-list button:active {
+  transform: scale(0.98);
+}

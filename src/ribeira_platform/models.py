@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any
 from uuid import uuid4
 
@@ -38,6 +39,57 @@ class Property:
     geometry_crs: str | None = None
     classification: DataClassification = DataClassification.MANUAL_CONFIRMED
     created_at: str = field(default_factory=now_utc)
+    boundary_source: str | None = None
+    boundary_checksum: str | None = None
+    updated_at: str | None = None
+
+
+@dataclass(frozen=True)
+class FieldContext:
+    """A source-backed, non-legal field/talhão geometry within one property."""
+
+    id: str
+    tenant_id: str
+    property_id: str
+    name: str
+    status: str
+    geometry_geojson: dict[str, Any]
+    geometry_crs: str
+    boundary_version: int
+    boundary_checksum: str
+    source_reference: str
+    observed_at: str
+    classification: DataClassification
+    created_at: str = field(default_factory=now_utc)
+    boundary_version_id: str | None = None
+
+
+@dataclass(frozen=True)
+class BoundaryImport:
+    id: str
+    tenant_id: str
+    property_id: str
+    original_filename: str
+    original_format: str
+    file_size_bytes: int
+    file_sha256: str
+    object_reference: str
+    original_crs: str | None
+    detected_crs: str | None
+    target_crs: str | None
+    geometry_geojson: dict[str, Any] | None
+    geometry_checksum: str | None
+    boundary_source: str
+    classification: DataClassification
+    warnings: list[str]
+    status: str
+    created_by: str
+    expected_property_checksum: str | None
+    created_at: str
+    reviewed_by: str | None = None
+    review_reason: str | None = None
+    approved_boundary_version: int | None = None
+    reviewed_at: str | None = None
 
 
 @dataclass(frozen=True)
@@ -108,6 +160,15 @@ class RuleDefinition:
     valid_from: str
     valid_until: str | None = None
     created_at: str = field(default_factory=now_utc)
+    scope_type: str = "TENANT"
+    scope_property_id: str | None = None
+    scope_asset_id: str | None = None
+    # Field/talhao applicability is explicit operational context. It does not
+    # assert crop, soil, legal boundary or agronomic state.
+    scope_field_id: str | None = None
+    # Customer applicability is explicit and only becomes effective through a
+    # time-bounded customer_property relationship for the evaluated property.
+    scope_customer_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -119,6 +180,26 @@ class Action:
     responsible_user_id: str | None
     deadline: str | None
     decision_id: str
+    created_at: str = field(default_factory=now_utc)
+
+
+@dataclass(frozen=True)
+class PilotFeedback:
+    """A tenant-isolated pilot observation about the product experience.
+
+    Feedback is not evidence about a property or its environment.  It is an
+    auditable customer/operator input which may later be triaged into a product
+    decision without silently changing any scientific or commercial conclusion.
+    """
+
+    id: str
+    tenant_id: str
+    submitted_by: str
+    feedback_type: str
+    page: str
+    feature_id: str
+    message: str
+    property_id: str | None = None
     created_at: str = field(default_factory=now_utc)
 
 
@@ -153,6 +234,17 @@ class Decision:
     missing_data: list[str]
     conflicts: list[dict[str, Any]]
     recommended_action: dict[str, Any] | None
+    # An asset is explicit operational context, never a substitute for a
+    # property-scoped measurement in this first rule slice.
+    subject_asset_id: str | None = None
+    subject_field_id: str | None = None
+    subject_field_boundary_version: int | None = None
+    subject_field_boundary_checksum: str | None = None
+    # These fields snapshot the applicability context selected at evaluation
+    # time. They do not assert ownership, service availability or a customer
+    # need, and keep later relationship changes from rewriting history.
+    selected_rule_scope_type: str | None = None
+    subject_customer_id: str | None = None
     created_at: str = field(default_factory=now_utc)
 
 
@@ -172,6 +264,8 @@ class DecisionResult:
 
 
 def to_jsonable(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return format(value, "f")
     if hasattr(value, "value"):
         return value.value
     if hasattr(value, "__dataclass_fields__"):

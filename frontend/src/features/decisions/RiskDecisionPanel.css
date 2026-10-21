@@ -1,0 +1,124 @@
+.risk-decision-panel {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.risk-decision-panel h2 {
+  font-size: var(--font-size-h4);
+  font-weight: var(--font-weight-subheader);
+  color: var(--color-text-primary);
+  margin: 0 0 16px;
+}
+
+.risk-decision-panel p {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-body-sm);
+  line-height: var(--line-height-body);
+  margin-bottom: 16px;
+}
+
+.risk-decision-panel ul {
+  display: grid;
+  gap: 12px;
+  list-style: none;
+  padding: 0;
+}
+
+.risk-decision-panel li {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 16px;
+  background: var(--color-bg-primary);
+}
+
+.risk-decision-panel li p {
+  margin: 0 0 8px;
+  font-size: var(--font-size-body-sm);
+}
+
+.risk-decision-panel li p:first-of-type {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.risk-decision-panel dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 12px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.risk-decision-panel dt {
+  font-size: var(--font-size-body-sm);
+  font-weight: var(--font-weight-label);
+  color: var(--color-text-secondary);
+}
+
+.risk-decision-panel dd {
+  font-size: var(--font-size-body-sm);
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.action-outcome {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
+}
+
+.action-outcome h3 {
+  font-size: var(--font-size-body-sm);
+  font-weight: var(--font-weight-subheader);
+  color: var(--color-text-primary);
+  margin: 0 0 8px;
+}
+
+.action-outcome p {
+  font-size: var(--font-size-body-sm);
+  margin: 0 0 12px;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.action-buttons button {
+  flex: 1;
+  padding: 10px 16px;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-body-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.action-buttons button:hover {
+  border-color: var(--color-accent-primary);
+  background: var(--color-bg-tertiary);
+}
+
+.action-buttons button:active {
+  transform: scale(0.98);
+}
+
+.empty-state.risk-decision {
+  padding: 24px;
+  text-align: center;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-tertiary);
+  border-radius: 6px;
+}
+
+.empty-state.risk-decision p {
+  margin: 0 0 8px;
+  font-size: var(--font-size-body-sm);
+}

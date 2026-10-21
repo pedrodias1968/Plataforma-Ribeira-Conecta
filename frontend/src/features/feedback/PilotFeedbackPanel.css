@@ -1,0 +1,78 @@
+.pilot-feedback {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 24px;
+}
+
+.pilot-feedback h2 {
+  font-size: var(--font-size-h4);
+  font-weight: var(--font-weight-subheader);
+  color: var(--color-text-primary);
+  margin: 0 0 16px;
+}
+
+.pilot-feedback form {
+  display: grid;
+  gap: 16px;
+}
+
+.pilot-feedback label {
+  display: grid;
+  font-size: var(--font-size-body-sm);
+  gap: 6px;
+  color: var(--color-text-primary);
+}
+
+.pilot-feedback select,
+.pilot-feedback textarea {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font: inherit;
+  padding: 10px 12px;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-body-sm);
+}
+
+.pilot-feedback select {
+  cursor: pointer;
+}
+
+.pilot-feedback select:hover {
+  border-color: var(--color-accent-primary);
+}
+
+.pilot-feedback textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+.pilot-feedback button {
+  background: var(--color-accent-primary);
+  border: 1px solid var(--color-accent-secondary);
+  border-radius: 6px;
+  color: var(--color-text-primary);
+  padding: 10px 16px;
+  font-size: var(--font-size-body-sm);
+  font-weight: var(--font-weight-label);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pilot-feedback button:hover {
+  background: var(--color-accent-secondary);
+  transform: translateY(-1px);
+}
+
+.pilot-feedback button:active {
+  transform: translateY(0);
+}
+
+.pilot-feedback button:disabled {
+  background: var(--color-bg-tertiary);
+  border-color: var(--color-border-light);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+  transform: none;
+}

@@ -1,0 +1,159 @@
+.boundary-editor {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.boundary-editor h2 {
+  font-size: var(--font-size-h4);
+  font-weight: var(--font-weight-subheader);
+  color: var(--color-text-primary);
+  margin: 0 0 16px;
+}
+
+.boundary-editor p {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-body-sm);
+  line-height: var(--line-height-body);
+  margin-bottom: 16px;
+}
+
+.boundary-editor .map-frame {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  height: 280px;
+  margin-bottom: 16px;
+  background: var(--color-bg-primary);
+}
+
+.boundary-editor .map-frame .map-canvas {
+  height: 100%;
+}
+
+.boundary-editor .map-frame .map-canvas canvas {
+  outline: none;
+}
+
+.boundary-editor .map-frame .map-canvas canvas.boundary {
+  stroke: var(--color-accent-primary);
+  stroke-width: 2;
+  fill: rgba(34, 197, 94, 0.1);
+}
+
+.boundary-editor .map-frame .map-canvas canvas.boundary.selected {
+  fill: rgba(34, 197, 94, 0.2);
+}
+
+.boundary-editor .map-frame .map-canvas canvas.boundary:hover {
+  stroke: var(--color-accent-success);
+}
+
+.boundary-editor .actions {
+  display: flex;
+  gap: 8px;
+}
+
+.boundary-editor .actions button {
+  flex: 1;
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-size: var(--font-size-body-sm);
+  font-weight: var(--font-weight-label);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.boundary-editor .actions button.cancel {
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+}
+
+.boundary-editor .actions button.cancel:hover {
+  border-color: var(--color-accent-error);
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.boundary-editor .actions button.save {
+  background: var(--color-accent-primary);
+  border: 1px solid var(--color-accent-secondary);
+  color: var(--color-text-primary);
+}
+
+.boundary-editor .actions button.save:hover {
+  background: var(--color-accent-secondary);
+}
+
+.boundary-editor .actions button:active {
+  transform: scale(0.98);
+}
+
+.boundary-editor .actions button:disabled {
+  background: var(--color-bg-tertiary);
+  border-color: var(--color-border-light);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+  transform: none;
+}
+
+.message-area {
+  padding: 12px 16px;
+  border-radius: 6px;
+  font-size: var(--font-size-body-sm);
+}
+
+.message-area.success {
+  background: rgba(34, 197, 94, 0.1);
+  color: var(--color-accent-success);
+  border: 1px solid var(--color-border-success);
+}
+
+.message-area.error {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--color-accent-error);
+  border: 1px solid var(--color-border-error);
+}
+
+.boundary-editor details {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  margin-top: 16px;
+  overflow: hidden;
+}
+
+.boundary-editor summary {
+  cursor: pointer;
+  font-weight: var(--font-weight-subheader);
+  font-size: var(--font-size-body-sm);
+  padding: 12px 16px;
+  background: var(--color-bg-tertiary);
+}
+
+.boundary-editor summary::after {
+  content: "▼";
+  float: right;
+  transform: rotate(0deg);
+  transition: transform 0.2s ease;
+}
+
+.boundary-editor[open] summary::after {
+  transform: rotate(180deg);
+}
+
+.boundary-editor details div {
+  padding: 16px;
+}
+
+.empty-state.boundary-editor {
+  padding: 24px;
+  text-align: center;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-tertiary);
+  border-radius: 6px;
+}
+
+.empty-state.boundary-editor p {
+  margin: 0 0 8px;
+  font-size: var(--font-size-body-sm);
+}

@@ -20,9 +20,28 @@ não foi implementado.
 | SSRF/provider registry | Prompt §§14-15 | Provider | network policy/registry | `provider_registry` | no generic fetch route | allowlist | private/metadata blocked | IMPLEMENTED |
 | Data quality/time | Prompt §§20-22,64 | Quality | normalizer/time utils | quality flags/timestamps | validation errors | valid only | NULL/UNKNOWN/timezone | IMPLEMENTED |
 | PostGIS/GIS foundation | Prompt §40 | Spatial | Postgres adapter | geometry/SRID/GIST | property route | CRS validation | real PostGIS | IMPLEMENTED |
-| Official providers | Blueprint fase 1 | Provider | adapters future | datasets/STAC future | contracts future | provider-specific | no real calls | GAP |
+| Official providers beyond CDSE | Blueprint fase 1 | Provider | future adapters | future datasets | provider-specific | future external tests | GAP |
 | IoT/MQTT/LoRaWAN | Blueprint fase 2 | Telemetry | future | device/measurement future | event bus future | replay rules | future | GAP |
 | Banana Intelligence | Prompt §§34-35 | Agronomy | future | agronomic observations | future | no diagnosis from satellite | future | GAP |
+| Domínio comercial e catálogo | Fase 1B §§4-6, 30 | Customer, Catalog, Delivery | `business.py`, `business_service.py` | migration 006 | operation-oriented `/v1` endpoints | configuração sobre hardcode | `tests/test_business.py`, PG business integration | IMPLEMENTED |
+| Ownership e pass-through | Fase 1B §§6-9, 40 | Asset, Finance | `AssetOwnership`, `PassThroughItem` | `asset_ownership`, `pass_through_item` | asset ownership endpoint | ownership explícito; sem inferência | unit + PG/RLS integration | IMPLEMENTED |
+| Contratos versionados e MRR | Fase 1B §§10-11, 31-32 | Contract, Subscription | `BusinessApplication`, repository | `customer_contract`, `contract_version`, `subscription` | contract/catalog/MRR endpoints | vigência + tratamento de receita | business domain tests | IMPLEMENTED |
+| Pricing transparente em Decimal | Fase 1B §§14-18, 41-42 | Pricing | `PricingEngine` | `pricing_policy_version` numeric | simulate price endpoint | `INCOMPLETE_PRICING`; monotonicidade | Decimal/monotonicity/missing input tests | IMPLEMENTED |
+| Capacity Gate versionado | Fase 1B §§12-13, 43 | Capacity | `CapacityEngine` | `operational_capacity_policy` | capacity create/evaluate | sem expansão automática | boundary/gate tests | IMPLEMENTED |
+| Opportunity Evidence First | Fase 1B §§23-29, 34 | Commercial Intelligence | `CommercialRuleEngine`, `BusinessApplication` | opportunity + evidence link | rule/qualification endpoints | `UNKNOWN` não pontua como ausência | unknown/evidence/RLS tests | IMPLEMENTED |
+| Prospect Score configurável | Fase 1B §§27-29 | Prospect | scoring model/factor domain | `prospect_scoring_*` | application operation prepared | unknown policy explícita | engine tests | IMPLEMENTED/PREPARED |
+| IAM comercial e segregação | Fase 1B §§36-39 | Authorization/Audit | central `AuthorizationPolicy`, audit | audit + tenant RLS | `commercial:*`, `pricing:*`, `contract:*`, `asset:*` | default deny + approver distinto | auth/API + PG tests | IMPLEMENTED |
+
+| CDSE official STAC provider | Fase 1C §§1-6 | Geospatial provider | `CopernicusStacAdapter`, `ProviderRegistry` | provider metadata | provider adapter | official endpoint/collection metadata | controlled external contract test | IMPLEMENTED |
+| Sentinel-2 L2A discovery and provenance | Fase 1C §§8-16, 26 | Satellite scene/asset | geospatial application/repository | scene/asset/search/candidate | search API | raw response/checksum/source | geospatial + external tests | IMPLEMENTED |
+| CRS/AOI validation | Fase 1C §§7-10 | Spatial AOI | `GeometryService` | PostGIS geometry 4326 | search operation | no silent repair/default CRS | invalid geometry/PostGIS tests | IMPLEMENTED |
+| Explicit scene selection | Fase 1C §§32-34, 61 | Scene policy | `SceneSelectionPolicy` | persisted candidate criteria | search result | versioned policy; no fallback | selection/unit tests | IMPLEMENTED |
+| NDVI derived raster | Fase 1C §§17-31, 43-46 | Derived product | `NdviProcessor`, controlled job | derived product + COG reference | NDVI job/provenance API | formula/version/nodata | local raster tests | IMPLEMENTED/ASSET GAP |
+| Tenant isolation for geospatial data | Fase 1C §§39-40 | Tenant-scoped geospatial | RLS + repository | forced RLS/FKs | tenant-scoped endpoints | default deny | real Postgres geospatial RLS | IMPLEMENTED |
+| External asset download | Fase 1C.1 §§1-18, 35-42 | Asset processing | `CredentialProviderPort`, `CdseS3AssetAdapter`, `LocalObjectStorage.put_file` | migration 008 asset access metadata | processing job + audit events | exact bucket/endpoint, bounded download, explicit auth failure | `tests/test_cdse_s3.py`; opt-in `test_cdse_s3_external.py` | IMPLEMENTED / external credential-gated |
+| Real Sentinel-2 NDVI validation | Fase 1C.1 §§20-31, 42-45 | Derived product | `NdviProcessor` + authenticated asset adapter | derived product + checksums/provenance | NDVI job | nodata, range validation, COG validation | deterministic local raster + opt-in external test | IMPLEMENTED locally / REAL NDVI credential-gated |
+| S3 credential boundary | Fase 1C.1 §§1-9, 18-19, 40-41 | Infrastructure security | environment credential provider + boto3 adapter | no secrets stored | asset access status/audit | no secret logging or fallback | redaction, missing credentials, bucket/URI tests | IMPLEMENTED |
+| Banana diagnosis / Prospect consumption | Fase 1C §§68-69 | out of scope | not implemented | not applicable | not exposed | prohibited in phase | negative scope review | GAP/BLOCKED BY SCOPE |
 
 ## Vertical slice rastreado
 
