@@ -2393,6 +2393,29 @@ def create_app(
             platform_admin=ctx.is_platform_admin,
         )
 
+    @app.get(
+        "/v1/tenants/{tenant_id}/properties/{property_id}/accountant-report",
+        tags=["farm-360", "sales", "costs"],
+    )
+    async def accountant_report(
+        tenant_id: str,
+        property_id: str,
+        date_from: str,
+        date_to: str,
+        as_of: str | None = None,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "sale:read", tenant_id)
+        authorize(ctx, "cost:read", tenant_id)
+        return application.accountant_report(
+            tenant_id,
+            property_id,
+            date_from=date_from,
+            date_to=date_to,
+            as_of=as_of,
+            platform_admin=ctx.is_platform_admin,
+        )
+
     @app.post("/v1/tenants/{tenant_id}/sources", status_code=201, tags=["sources"])
     async def create_source(
         tenant_id: str, payload: SourceRequest, ctx: AuthContext = Depends(context)
