@@ -217,6 +217,16 @@ for _role in ("OPERATOR", "TENANT_ADMIN", "MANAGER", "AGRONOMIST", "TECHNICIAN")
         {_FERTILIZATION_WRITE}
     )
 
+# Costs are financial data: only management roles and the analyst read them,
+# and only management roles write. Field roles (OPERATOR, TECHNICIAN,
+# AGRONOMIST) and VIEWER/COMMERCIAL have no cost access.
+_COST_READ = "cost:read"
+_COST_WRITE = "cost:write"
+for _role in ("ANALYST", "TENANT_ADMIN", "MANAGER"):
+    ROLE_PERMISSIONS[_role] = ROLE_PERMISSIONS[_role] | frozenset({_COST_READ})
+for _role in ("TENANT_ADMIN", "MANAGER"):
+    ROLE_PERMISSIONS[_role] = ROLE_PERMISSIONS[_role] | frozenset({_COST_WRITE})
+
 
 class AuthenticationError(PermissionError):
     def __init__(
