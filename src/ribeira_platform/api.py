@@ -62,6 +62,7 @@ from .models import (
 )
 from .field_context import FieldBoundaryConflict
 from .costs import CostConflict
+from .sales import SalesConflict
 from .fertilization import FertilizationConflict
 from .harvest import HarvestConflict
 from .object_storage import ObjectStorageError
@@ -317,6 +318,51 @@ class SoilLabAnalysisRequest(BaseModel):
     sand_percent: float | None = None
     raw_attributes: dict[str, Any] = Field(default_factory=dict)
     classification: DataClassification = DataClassification.MANUAL_CONFIRMED
+
+
+class SaleBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    sale_date: str = Field(min_length=10, max_length=10)
+    buyer_name: str = Field(min_length=1, max_length=200)
+    quantity: float | None = Field(default=None, ge=0)
+    quantity_unit: str | None = Field(default=None, pattern=r"^(BOXES|KG|BUNCHES)$")
+    unit_price_brl: float | None = Field(default=None, ge=0)
+    price_unit: str | None = Field(default=None, pattern=r"^(BOXES|KG|BUNCHES)$")
+    total_amount_brl: float | None = Field(default=None, ge=0)
+    expected_payment_date: str | None = Field(
+        default=None, min_length=10, max_length=10
+    )
+    recorded_by: str = Field(min_length=1, max_length=200)
+    source_reference: str = Field(min_length=1, max_length=500)
+    classification: DataClassification = DataClassification.MANUAL_CONFIRMED
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class SaleRequest(SaleBody):
+    pass
+
+
+class SaleCorrectionRequest(SaleBody):
+    correction_reason: str = Field(min_length=1, max_length=1000)
+
+
+class PaymentBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    payment_date: str = Field(min_length=10, max_length=10)
+    amount_brl: float = Field(gt=0)
+    method: str | None = Field(default=None, max_length=100)
+    recorded_by: str = Field(min_length=1, max_length=200)
+    source_reference: str = Field(min_length=1, max_length=500)
+    classification: DataClassification = DataClassification.MANUAL_CONFIRMED
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class PaymentRequest(PaymentBody):
+    pass
+
+
+class PaymentCorrectionRequest(PaymentBody):
+    correction_reason: str = Field(min_length=1, max_length=1000)
 
 
 class CostEntryBody(BaseModel):
@@ -905,6 +951,13 @@ def create_app(
         return JSONResponse(
             status_code=409,
             content={"error": {"code": "COST_CONFLICT", "message": str(exc)}},
+        )
+
+    @app.exception_handler(SalesConflict)
+    async def sales_conflict(_: Request, exc: SalesConflict):
+        return JSONResponse(
+            status_code=409,
+            content={"error": {"code": "SALES_CONFLICT", "message": str(exc)}},
         )
 
     @app.get("/health/live", tags=["health"])
@@ -2177,6 +2230,166 @@ def create_app(
             field_id=field_id,
             date_from=date_from,
             date_to=date_to,
+            platform_admin=ctx.is_platform_admin,
+        )
+
+    @app.post(
+        "/v1/tenants/{tenant_id}/properties/{property_id}/sale-records",
+        status_code=201,
+        tags=["farm-360", "sales"],
+    )
+    async def create_sale(
+        tenant_id: str,
+        property_id: str,
+        payload: SaleRequest,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "sale:write", tenant_id)
+        item = application.register_sale(
+            tenant_id,
+            property_id,
+            **payload.model_dump(),
+            actor=ctx.subject,
+            platform_admin=ctx.is_platform_admin,
+        )
+        return safe_harvest(item)
+
+    @app.get(
+        "/v1/tenants/{tenant_id}/properties/{property_id}/sale-records",
+        tags=["farm-360", "sales"],
+    )
+    async def list_sales(
+        tenant_id: str,
+        property_id: str,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        include_superseded: bool = False,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "sale:read", tenant_id)
+        items = application.list_sales(
+            tenant_id,
+            property_id,
+            date_from=date_from,
+            date_to=date_to,
+            include_superseded=include_superseded,
+            platform_admin=ctx.is_platform_admin,
+        )
+        return {
+            "property_id": property_id,
+            "items": [safe_harvest(item) for item in items],
+        }
+
+    @app.post(
+        "/v1/tenants/{tenant_id}/sale-records/{sale_id}/corrections",
+        status_code=201,
+        tags=["farm-360", "sales"],
+    )
+    async def correct_sale(
+        tenant_id: str,
+        sale_id: str,
+        payload: SaleCorrectionRequest,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "sale:write", tenant_id)
+        item = application.correct_sale(
+            tenant_id,
+            sale_id,
+            **payload.model_dump(),
+            actor=ctx.subject,
+            platform_admin=ctx.is_platform_admin,
+        )
+        return safe_harvest(item)
+
+    @app.post(
+        "/v1/tenants/{tenant_id}/sale-records/{sale_id}/payments",
+        status_code=201,
+        tags=["farm-360", "sales"],
+    )
+    async def create_payment(
+        tenant_id: str,
+        sale_id: str,
+        payload: PaymentRequest,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "sale:write", tenant_id)
+        item = application.register_payment(
+            tenant_id,
+            sale_id,
+            **payload.model_dump(),
+            actor=ctx.subject,
+            platform_admin=ctx.is_platform_admin,
+        )
+        return safe_harvest(item)
+
+    @app.get(
+        "/v1/tenants/{tenant_id}/properties/{property_id}/payment-records",
+        tags=["farm-360", "sales"],
+    )
+    async def list_payments(
+        tenant_id: str,
+        property_id: str,
+        sale_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        include_superseded: bool = False,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "sale:read", tenant_id)
+        items = application.list_payments(
+            tenant_id,
+            property_id,
+            sale_id=sale_id,
+            date_from=date_from,
+            date_to=date_to,
+            include_superseded=include_superseded,
+            platform_admin=ctx.is_platform_admin,
+        )
+        return {
+            "property_id": property_id,
+            "items": [safe_harvest(item) for item in items],
+        }
+
+    @app.post(
+        "/v1/tenants/{tenant_id}/payment-records/{payment_id}/corrections",
+        status_code=201,
+        tags=["farm-360", "sales"],
+    )
+    async def correct_payment(
+        tenant_id: str,
+        payment_id: str,
+        payload: PaymentCorrectionRequest,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "sale:write", tenant_id)
+        item = application.correct_payment(
+            tenant_id,
+            payment_id,
+            **payload.model_dump(),
+            actor=ctx.subject,
+            platform_admin=ctx.is_platform_admin,
+        )
+        return safe_harvest(item)
+
+    @app.get(
+        "/v1/tenants/{tenant_id}/properties/{property_id}/sales-summary",
+        tags=["farm-360", "sales"],
+    )
+    async def sales_summary(
+        tenant_id: str,
+        property_id: str,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        as_of: str | None = None,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "sale:read", tenant_id)
+        return application.sales_summary(
+            tenant_id,
+            property_id,
+            date_from=date_from,
+            date_to=date_to,
+            as_of=as_of,
             platform_admin=ctx.is_platform_admin,
         )
 

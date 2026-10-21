@@ -33,6 +33,7 @@ import { HydrologyPanel } from "../features/hydrology/HydrologyPanel";
 import { HarvestPanel } from "../features/harvest/HarvestPanel";
 import { FertilizationPanel } from "../features/fertilization/FertilizationPanel";
 import { CostPanel } from "../features/costs/CostPanel";
+import { SalesPanel } from "../features/sales/SalesPanel";
 import { formatHectares } from "../formatting";
 
 interface Props {
@@ -420,6 +421,7 @@ export function Farm360Page({
         <FertilizationPanel fields={fields} tenantId={tenantId} propertyId={propertyId} apiBaseUrl={apiBaseUrl} token={token} />
         <HarvestPanel fields={fields} tenantId={tenantId} propertyId={propertyId} apiBaseUrl={apiBaseUrl} token={token} />
         <CostPanel fields={fields} tenantId={tenantId} propertyId={propertyId} apiBaseUrl={apiBaseUrl} token={token} />
+        <SalesPanel tenantId={tenantId} propertyId={propertyId} apiBaseUrl={apiBaseUrl} token={token} />
         {canRunSatelliteOperations && <SceneOperationsPanel
           api={api}
           tenantId={tenantId}
