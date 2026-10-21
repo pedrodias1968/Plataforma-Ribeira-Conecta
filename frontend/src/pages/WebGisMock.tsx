@@ -1,90 +1,166 @@
+import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 import "./WebGisMock.css";
 
 /**
  * Illustration of the product's WebGIS screen. Every shape and number is
  * fictional (no real property, boundary or measurement) and the component says
- * so on screen. It is decorative: the real data lives in the authenticated app.
+ * so on screen. The layer chips and parcel selection really work, but the data
+ * behind them is invented; the real data lives in the authenticated app.
  */
-const PARCELS: Array<{ id: string; points: string; fill: string; label: string }> = [
-  { id: "a", points: "430,150 560,130 610,210 520,250 440,230", fill: "#15803d", label: "A" },
-  { id: "b", points: "560,130 690,150 700,250 610,210", fill: "#4ade80", label: "B" },
-  { id: "c", points: "440,230 520,250 540,340 450,350 410,290", fill: "#a3e635", label: "C" },
-  { id: "d", points: "520,250 610,210 700,250 680,340 540,340", fill: "#facc15", label: "D" },
-  { id: "e", points: "450,350 540,340 680,340 650,420 500,430", fill: "#b45309", label: "E" },
+type Parcel = {
+  id: string;
+  label: string;
+  points: string;
+  fill: string;
+  ndvi: string;
+  scene: string;
+  at: [number, number];
+};
+
+const PARCELS: Parcel[] = [
+  { id: "a", label: "A", points: "860,250 990,230 1040,310 950,350 870,330", fill: "#2e7d4f", ndvi: "0,71", scene: "Sentinel-2 · 15 set.", at: [945, 292] },
+  { id: "b", label: "B", points: "990,230 1120,250 1130,350 1040,310", fill: "#5fbf6f", ndvi: "0,64", scene: "Sentinel-2 · 15 set.", at: [1070, 288] },
+  { id: "c", label: "C", points: "870,330 950,350 970,440 880,450 840,390", fill: "#a7c957", ndvi: "0,48", scene: "Sentinel-2 · 15 set.", at: [905, 395] },
+  { id: "d", label: "D", points: "950,350 1040,310 1130,350 1110,440 970,440", fill: "#e9c54a", ndvi: "0,39", scene: "Sentinel-2 · 10 set.", at: [1040, 392] },
+  { id: "e", label: "E", points: "880,450 970,440 1110,440 1080,520 930,530", fill: "#b5651d", ndvi: "0,22", scene: "Sentinel-2 · 10 set.", at: [1000, 488] },
 ];
 
-export function WebGisMock() {
+const LAYERS = [
+  { key: "boundary", label: "Limite" },
+  { key: "parcels", label: "Talhões" },
+  { key: "ndvi", label: "NDVI" },
+  { key: "water", label: "Água e inundação" },
+] as const;
+
+type LayerKey = (typeof LAYERS)[number]["key"];
+
+const RIVER = "M0 640 C240 590 420 720 700 690 S 1000 780 1300 740 S 1500 650 1600 700";
+
+const WIDE_VIEWBOX = "0 0 1600 900";
+const NARROW_VIEWBOX = "770 180 470 470";
+
+function useViewBox() {
+  const [viewBox, setViewBox] = useState(WIDE_VIEWBOX);
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const query = window.matchMedia("(max-width: 960px)");
+    const update = () => setViewBox(query.matches ? NARROW_VIEWBOX : WIDE_VIEWBOX);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  return viewBox;
+}
+
+export function WebGisMock({ children }: { children?: ReactNode }) {
+  const [layers, setLayers] = useState<Record<LayerKey, boolean>>({ boundary: true, parcels: true, ndvi: true, water: false });
+  const [selectedId, setSelectedId] = useState("c");
+  const viewBox = useViewBox();
+  const selected = PARCELS.find((parcel) => parcel.id === selectedId) ?? PARCELS[2];
+
+  const toggle = (key: LayerKey) => setLayers((current) => ({ ...current, [key]: !current[key] }));
+  const onParcelKey = (event: KeyboardEvent<SVGGElement>, id: string) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      setSelectedId(id);
+    }
+  };
+
   return (
-    <figure className="webgis" aria-label="Ilustração da tela de mapa da plataforma, com dados fictícios">
-      <div className="webgis-bar" aria-hidden="true">
-        <span className="webgis-search">Ir para coordenadas</span>
-        <span className="webgis-chip">Medir distância</span>
-        <span className="webgis-chip">Medir área</span>
-        <span className="webgis-chip">Centralizar sítio</span>
-        <span className="webgis-flag">Ilustração · dados fictícios</span>
-      </div>
-      <div className="webgis-body">
-        <aside className="webgis-layers" aria-hidden="true">
-          <strong>Camadas</strong>
-          <label><input type="checkbox" checked readOnly tabIndex={-1} /> Limite da propriedade</label>
-          <label><input type="checkbox" checked readOnly tabIndex={-1} /> Talhões</label>
-          <label><input type="checkbox" checked readOnly tabIndex={-1} /> NDVI (Sentinel-2)</label>
-          <label><input type="checkbox" readOnly tabIndex={-1} /> Inundação e água</label>
-          <label><input type="checkbox" readOnly tabIndex={-1} /> Solo e laboratório</label>
-        </aside>
-        <svg className="webgis-map" viewBox="0 0 1000 520" role="img" aria-label="Mapa ilustrativo com talhões coloridos por NDVI">
-          <defs>
-            <pattern id="webgis-grid" width="50" height="50" patternUnits="userSpaceOnUse">
-              <path d="M 50 0 L 0 0 0 50" fill="none" stroke="rgba(148,163,184,0.08)" strokeWidth="1" />
-            </pattern>
-            <linearGradient id="webgis-ramp" x1="0" x2="1">
-              <stop offset="0" stopColor="#92400e" />
-              <stop offset="0.5" stopColor="#facc15" />
-              <stop offset="1" stopColor="#15803d" />
-            </linearGradient>
-          </defs>
-          <rect width="1000" height="520" fill="#0d1712" />
-          <rect width="1000" height="520" fill="url(#webgis-grid)" />
-          <path d="M0 330 C150 280 250 400 380 360 S 520 470 700 430 S 900 330 1000 380" fill="none" stroke="#1d4ed8" strokeOpacity="0.55" strokeWidth="46" strokeLinecap="round" />
-          <path d="M0 330 C150 280 250 400 380 360 S 520 470 700 430 S 900 330 1000 380" fill="none" stroke="#3b82f6" strokeOpacity="0.5" strokeWidth="26" strokeLinecap="round" />
-          <path d="M60 80 L220 60 L300 140 L210 200 L80 170 Z" fill="#14532d" fillOpacity="0.35" />
-          <path d="M760 60 L930 90 L960 200 L820 230 L740 150 Z" fill="#14532d" fillOpacity="0.3" />
-          <polygon points="410,110 720,110 740,450 480,450 395,300" fill="none" stroke="#34d399" strokeWidth="3" strokeLinejoin="round" />
-          {PARCELS.map((parcel) => (
-            <g key={parcel.id}>
-              <polygon points={parcel.points} fill={parcel.fill} fillOpacity="0.72" stroke="#0d1712" strokeWidth="2" />
+    <div className="stage">
+      <svg className="stage-map" viewBox={viewBox} preserveAspectRatio="xMidYMid slice" role="img" aria-label="Mapa ilustrativo com talhões coloridos por NDVI">
+        <defs>
+          <pattern id="stage-grid" width="80" height="80" patternUnits="userSpaceOnUse">
+            <path d="M 80 0 L 0 0 0 80" fill="none" stroke="rgba(236,232,218,0.05)" strokeWidth="1" />
+          </pattern>
+          <pattern id="stage-hatch" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <line x1="0" y1="0" x2="0" y2="14" stroke="rgba(110,168,254,0.45)" strokeWidth="3" />
+          </pattern>
+        </defs>
+        <rect width="1600" height="900" fill="#0b110d" />
+        <rect width="1600" height="900" fill="url(#stage-grid)" />
+        <g fill="none" stroke="rgba(236,232,218,0.07)" strokeWidth="1.5">
+          <path d="M0 210 C260 150 430 290 700 230 S 1080 110 1600 190" />
+          <path d="M0 270 C260 210 430 350 700 290 S 1080 170 1600 250" />
+          <path d="M0 330 C260 270 430 410 700 350 S 1080 230 1600 310" />
+          <path d="M0 830 C300 790 520 880 900 830 S 1400 780 1600 820" />
+        </g>
+        <path d="M1220 560 L1420 520 L1520 640 L1380 700 L1230 650 Z" fill="#14301f" fillOpacity="0.55" />
+        <path d="M120 120 L330 90 L420 190 L300 270 L140 230 Z" fill="#14301f" fillOpacity="0.45" />
+        <path className="stage-river" d={RIVER} fill="none" stroke="#1f4f9c" strokeOpacity="0.6" strokeWidth="58" strokeLinecap="round" />
+        <path className="stage-river-flow" d={RIVER} fill="none" stroke="#5b9cf0" strokeOpacity="0.55" strokeWidth="26" strokeLinecap="round" />
+        {layers.water && (
+          <path className="stage-layer" d={RIVER} fill="none" stroke="url(#stage-hatch)" strokeWidth="190" strokeLinecap="round" opacity="0.9" />
+        )}
+        {layers.parcels &&
+          PARCELS.map((parcel, index) => (
+            <g
+              key={parcel.id}
+              className={`stage-parcel${parcel.id === selectedId ? " is-selected" : ""}`}
+              style={{ animationDelay: `${index * 70}ms` }}
+              role="button"
+              tabIndex={0}
+              aria-pressed={parcel.id === selectedId}
+              aria-label={`Talhão ${parcel.label} (exemplo fictício)`}
+              onClick={() => setSelectedId(parcel.id)}
+              onKeyDown={(event) => onParcelKey(event, parcel.id)}
+            >
+              <polygon
+                points={parcel.points}
+                fill={layers.ndvi ? parcel.fill : "#26352b"}
+                fillOpacity={layers.ndvi ? 0.8 : 0.9}
+                stroke={parcel.id === selectedId ? "#ece8da" : "#0b110d"}
+                strokeWidth={parcel.id === selectedId ? 4 : 2}
+                strokeLinejoin="round"
+              />
+              <text x={parcel.at[0]} y={parcel.at[1]} textAnchor="middle" className="stage-parcel-label">
+                {parcel.label}
+              </text>
             </g>
           ))}
-          {[[500, 190, "A"], [640, 185, "B"], [480, 295, "C"], [605, 290, "D"], [575, 385, "E"]].map(([x, y, name]) => (
-            <text key={String(name)} x={Number(x)} y={Number(y)} fill="#f8fafc" fontSize="22" fontWeight="700" textAnchor="middle">{name}</text>
-          ))}
-          {[[440, 140], [700, 130], [470, 420]].map(([x, y]) => (
-            <g key={`${x}-${y}`}>
-              <circle cx={x} cy={y} r="11" fill="#f59e0b" stroke="#0d1712" strokeWidth="3" />
-              <rect x={Number(x) - 4} y={Number(y) - 3} width="8" height="6" fill="#0d1712" />
-            </g>
-          ))}
-          <g transform="translate(24 470)">
-            <rect width="110" height="6" fill="#f8fafc" fillOpacity="0.8" />
-            <text y="24" fill="#cbd5e1" fontSize="14">300 m</text>
+        {layers.boundary && (
+          <polygon className="stage-layer" points="840,215 1150,215 1160,540 905,555 820,395" fill="none" stroke="#e9c54a" strokeWidth="3" strokeDasharray="14 8" strokeLinejoin="round" />
+        )}
+        {[[850, 237], [1132, 232], [890, 540]].map(([x, y]) => (
+          <g key={`${x}-${y}`} aria-hidden="true">
+            <circle cx={x} cy={y} r="11" fill="#e9c54a" stroke="#0b110d" strokeWidth="3" />
           </g>
-        </svg>
-        <aside className="webgis-info" aria-hidden="true">
-          <strong>Talhão C (exemplo)</strong>
-          <dl>
-            <dt>NDVI médio</dt><dd>0,48 (fictício)</dd>
-            <dt>Cena</dt><dd>Sentinel-2 · 15 set.</dd>
-            <dt>Cobertura de nuvens</dt><dd>sem dado</dd>
-          </dl>
-          <p>Dado ausente aparece como “sem dado”, nunca como zero.</p>
-        </aside>
+        ))}
+        <g transform="translate(60 840)" aria-hidden="true">
+          <rect width="120" height="5" fill="#ece8da" fillOpacity="0.85" />
+          <text y="26" className="stage-scale">300 m</text>
+        </g>
+      </svg>
+
+      <div className="stage-top">
+        <div className="stage-chips" role="group" aria-label="Camadas do mapa ilustrativo">
+          {LAYERS.map((layer) => (
+            <button key={layer.key} type="button" className="stage-chip" aria-pressed={layers[layer.key]} onClick={() => toggle(layer.key)}>
+              {layer.label}
+            </button>
+          ))}
+        </div>
+        <span className="stage-flag">Ilustração · dados fictícios</span>
       </div>
-      <figcaption className="webgis-legend">
+
+      <aside className="stage-info" aria-live="polite">
+        <span className="stage-info-kicker">Talhão {selected.label} · exemplo</span>
+        <dl>
+          <div><dt>NDVI médio</dt><dd>{selected.ndvi} <small>(fictício)</small></dd></div>
+          <div><dt>Cena</dt><dd>{selected.scene}</dd></div>
+          <div><dt>Cobertura de nuvens</dt><dd>sem dado</dd></div>
+        </dl>
+        <p>Dado ausente aparece como “sem dado”, nunca como zero.</p>
+      </aside>
+
+      <div className="stage-legend">
         <span>−1 solo/água</span>
-        <span className="webgis-ramp" aria-hidden="true" />
+        <span className="stage-ramp" aria-hidden="true" />
         <span>+1 vegetação</span>
-        <span className="webgis-note">Limite e talhões desenhados para ilustração. Não representam uma propriedade real.</span>
-      </figcaption>
-    </figure>
+        <span className="stage-note">Limite e talhões desenhados para ilustração. Não representam uma propriedade real.</span>
+      </div>
+
+      {children && <div className="stage-copy">{children}</div>}
+    </div>
   );
 }

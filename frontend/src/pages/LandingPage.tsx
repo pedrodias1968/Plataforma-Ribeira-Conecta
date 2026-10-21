@@ -1,592 +1,301 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import "@fontsource-variable/bricolage-grotesque";
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
 import "./LandingPage.css";
 import { WebGisMock } from "./WebGisMock";
 
-type StatusBadgeProps = {
-  status: "disponivel" | "em-desenvolvimento" | "planejado";
-  label: string;
+type Status = "ready" | "building" | "planned";
+
+const STATUS_LABEL: Record<Status, string> = {
+  ready: "Funcionando",
+  building: "Em desenvolvimento",
+  planned: "Em planejamento",
 };
 
-function StatusBadge({ status, label }: StatusBadgeProps) {
-  const styles = {
-    disponivel: {
-      backgroundColor: "#15803d",
-      color: "#f8fafc",
-    },
-    "em-desenvolvimento": {
-      backgroundColor: "#0ea5e9",
-      color: "#f8fafc",
-    },
-    planejado: {
-      backgroundColor: "#6b7280",
-      color: "#f8fafc",
-    },
-  };
-
-  return (
-    <span style={styles[status]} className="status-badge">
-      {label}
-    </span>
-  );
+function StatusTag({ status }: { status: Status }) {
+  return <span className={`tag tag-${status}`}>{STATUS_LABEL[status]}</span>;
 }
 
-type IconProps = {
-  name: string;
-  className?: string;
-};
+const CONTACT = "contato@ribeiraconecta.com.br";
 
-function Icon({ name, className = "" }: IconProps) {
-  const icons: Record<string, React.ReactNode> = {
-    connectivity: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
-        <circle cx="12" cy="12" r="3" />
-        <path d="M12 2v2" />
-        <path d="M12 20v2" />
-        <path d="M2 12h2" />
-        <path d="M20 12h2" />
-        <path d="M4.93 4.93l1.41 1.41" />
-        <path d="M17.66 17.66l1.41 1.41" />
-        <path d="M4.93 19.07l1.41-1.41" />
-        <path d="M17.66 6.34l1.41-1.41" />
-      </svg>
-    ),
-    intelligence: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
-        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-        <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
-        <line x1="12" y1="22.08" x2="12" y2="12" />
-      </svg>
-    ),
-    satellite: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
-        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-      </svg>
-    ),
-    flood: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
-        <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" />
-      </svg>
-    ),
-    map: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
-        <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" />
-        <line x1="8" y1="2" x2="8" y2="18" />
-        <line x1="16" y1="6" x2="16" y2="22" />
-      </svg>
-    ),
-    erp: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
-        <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
-        <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
-      </svg>
-    ),
-    service: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
-        <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-      </svg>
-    ),
-    geospatial: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
-        <circle cx="12" cy="12" r="10" />
-        <path d="M2 12h20" />
-        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-      </svg>
-    ),
-    banana: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
-        <path d="M19.5 7.5c-1-2-2.5-3.5-5.5-3.5-3 0-5.5 1.5-7 3-2 2-3 4.5-3 7.5 0 3 2.5 5.5 6 5.5 4.5 0 7-3.5 9-7 1-1.5 1-2.5 1-3.5 0-1-1-1.5-1-2z" />
-        <path d="M14 14c-1 1-2.5 1.5-4 1.5-2.5 0-4-1-5-2" />
-      </svg>
-    ),
-    menu: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
-        <line x1="3" y1="12" x2="21" y2="12" />
-        <line x1="3" y1="6" x2="21" y2="6" />
-        <line x1="3" y1="18" x2="21" y2="18" />
-      </svg>
-    ),
-    close: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
-        <line x1="18" y1="6" x2="6" y2="18" />
-        <line x1="6" y1="6" x2="18" y2="18" />
-      </svg>
-    ),
-  };
+const LAYER_ROWS: Array<{ name: string; text: string; status: Status }> = [
+  { name: "Propriedade e talhões", text: "Limite desenhado ou importado (GeoJSON, KML/KMZ), com histórico de cada alteração.", status: "ready" },
+  { name: "Vegetação por satélite", text: "NDVI por talhão a partir do Sentinel-2, com máscara de nuvens e comparação entre datas.", status: "ready" },
+  { name: "Hidrologia do Vale do Ribeira", text: "Nível de rios e chuva a partir de fontes oficiais (SP Águas e ANA), no contexto da propriedade.", status: "ready" },
+  { name: "Gestão da operação", text: "Colheita, adubação, estoque, custos e vendas registrados por talhão, no mesmo mapa.", status: "building" },
+];
 
-  return <div className={`icon icon-${name} ${className}`}>{icons[name] || null}</div>;
-}
+const AUDIENCES = [
+  {
+    who: "Produtores",
+    text: "Veja a propriedade no mapa, acompanhe a vegetação e os rios, e registre colheita, adubação, custos e vendas por talhão.",
+    href: "#erp",
+    cta: "Ver a gestão da banana",
+  },
+  {
+    who: "Investidores",
+    text: "Produto em construção com base técnica auditável: dados separados por produtor, registros que não são apagados e um quadro público do que já funciona.",
+    href: "#estagio",
+    cta: "Ver o estágio atual",
+  },
+  {
+    who: "Parceiros",
+    text: "Cooperativas, associações, consultorias e empresas de conectividade e insumos: dados territoriais compartilhados com permissão do produtor, a partir de fontes oficiais abertas.",
+    href: "#contato",
+    cta: "Propor uma parceria",
+  },
+];
+
+const ERP_MODULES: Array<[string, string]> = [
+  ["Colheita por talhão", "Cachos, caixas, peso e descarte."],
+  ["Adubação e insumos", "O que foi aplicado, onde e quando."],
+  ["Estoque de insumos", "Entradas, saídas e saldo por produto."],
+  ["Custos por talhão e por kg", "Custo registrado; sem dado, mostra “sem registro”."],
+  ["Vendas e recebimentos", "Comprador, valor a receber e prazo."],
+  ["Relatório para o contador", "Vendas e custos do período em planilha."],
+];
+
+const STAGES: Array<{ status: Status; title: string; items: string[] }> = [
+  {
+    status: "ready",
+    title: "Funcionando",
+    items: ["Cadastro de propriedade e talhões", "Mapa e índice de vegetação por satélite", "Painel de hidrologia"],
+  },
+  {
+    status: "building",
+    title: "Em desenvolvimento",
+    items: ["Colheita, adubação e estoque", "Custos, vendas e relatório para o contador", "Correção de registros com histórico"],
+  },
+  {
+    status: "planned",
+    title: "Em planejamento",
+    items: ["Conectividade rural", "Serviços de campo"],
+  },
+];
+
+const NAV = [
+  ["plataforma", "Plataforma"],
+  ["publicos", "Para quem"],
+  ["erp", "Gestão da banana"],
+  ["estagio", "Estágio"],
+  ["contato", "Contato"],
+] as const;
 
 export function LandingPage() {
   const [scrolled, setScrolled] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
-    const handleScroll = () => setScrolled(window.scrollY > 50);
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
+    const onScroll = () => setScrolled(window.scrollY > 8);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  const scrollToSection = (id: string) => {
-    setMobileMenuOpen(false);
-    const element = document.getElementById(id);
-    if (element) element.scrollIntoView({ behavior: "smooth" });
-  };
-
-  const handleContact = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleContact = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const field = (key: string) => String(data.get(key) ?? "");
-    const body = [
-      `Nome: ${field("name")}`,
-      `E-mail: ${field("email")}`,
-      `Telefone: ${field("phone")}`,
-      "",
-      field("message"),
-    ].join("\n");
+    const body = [`Nome: ${field("name")}`, `E-mail: ${field("email")}`, `Telefone: ${field("phone")}`, "", field("message")].join("\n");
     const subject = `Contato pelo site (${field("profile")})`;
-    window.location.href =
-      `mailto:contato@ribeiraconecta.com.br?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.location.href = `mailto:${CONTACT}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
   return (
     <div className="landing-page">
-      <header className={`landing-header ${scrolled ? "scrolled" : ""}`}>
-        <div className="container">
-          <div className="logo" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>
+      <header className={`site-header${scrolled ? " is-scrolled" : ""}`}>
+        <div className="site-header-inner">
+          <a className="brand" href="/" aria-label="Ribeira Conecta, início">
+            <svg viewBox="0 0 24 24" aria-hidden="true" className="brand-mark">
+              <path d="M3 17c4-1 6-5 9-5s5 2 9 1" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              <path d="M3 12c4-1 6-5 9-5s5 2 9 1" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0.5" />
+            </svg>
             Ribeira Conecta
-          </div>
-          <nav className={`nav ${mobileMenuOpen ? "open" : ""}`}>
-            <a onClick={() => scrollToSection("hero")}>Início</a>
-            <a onClick={() => scrollToSection("problema")}>Problema</a>
-            <a onClick={() => scrollToSection("publicos")}>Para quem</a>
-            <a onClick={() => scrollToSection("ecossistema")}>Ecossistema</a>
-            <a onClick={() => scrollToSection("geoespacial")}>Geoespacial</a>
-            <a onClick={() => scrollToSection("hydrology")}>Hidrologia</a>
-            <a onClick={() => scrollToSection("erp")}>ERP Bananicultura</a>
-            <a onClick={() => scrollToSection("servicos")}>Serviços</a>
-            <a onClick={() => scrollToSection("transparencia")}>Estágio</a>
-            <a onClick={() => scrollToSection("sobre")}>Sobre</a>
-            <a onClick={() => scrollToSection("contato")}>Contato</a>
+          </a>
+          <nav id="site-nav" className={`site-nav${menuOpen ? " is-open" : ""}`} aria-label="Principal">
+            {NAV.map(([id, label]) => (
+              <a key={id} href={`#${id}`} onClick={() => setMenuOpen(false)}>
+                {label}
+              </a>
+            ))}
           </nav>
-          <button
-            className="mobile-menu-btn"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            aria-label="Menu"
-          >
-            <Icon name={mobileMenuOpen ? "close" : "menu"} />
+          <div className="site-actions">
+            <a href="/?entrar=1" className="btn btn-ghost">Entrar</a>
+            <a href={`mailto:${CONTACT}`} className="btn btn-solid">Falar com a equipe</a>
+          </div>
+          <button type="button" className="menu-btn" aria-label="Menu" aria-expanded={menuOpen} aria-controls="site-nav" onClick={() => setMenuOpen((open) => !open)}>
+            <span aria-hidden="true">{menuOpen ? "Fechar" : "Menu"}</span>
           </button>
-          <a href="/?entrar=1" className="btn-secondary header-login">
-            Entrar
-          </a>
-          <a href="mailto:contato@ribeiraconecta.com.br" className="btn-primary">
-            Fale conosco
-          </a>
         </div>
       </header>
 
-      <section id="hero" className="hero">
-        <div className="container">
-          <p className="eyebrow">Conectividade, Inteligência e Gestão</p>
-          <h1>do cacho à mesa</h1>
-          <p className="subtitle">
-            Plataforma de inteligência territorial e gestão para a cadeia da banana no Vale do Ribeira.
-            Mapa da propriedade, monitoramento por satélite, hidrologia e controle da operação em um só lugar.
-            Para produtores, investidores e parceiros.
-          </p>
-          <div className="hero-actions">
-            <a href="mailto:contato@ribeiraconecta.com.br" className="btn-primary">
-              Agendar demonstração
-            </a>
-            <a href="#ecossistema" className="btn-secondary">
-              Conhecer a plataforma
-            </a>
-          </div>
-          <WebGisMock />
-        </div>
-      </section>
+      <main>
+        <section id="inicio" className="hero">
+          <WebGisMock>
+            <p className="kicker">Vale do Ribeira · inteligência territorial</p>
+            <h1>Do cacho à mesa, no mapa.</h1>
+            <p className="lede">
+              A propriedade inteira em uma tela: limites, vegetação por satélite, rios e a rotina da banana,
+              da colheita à venda. Para produtores, investidores e parceiros.
+            </p>
+            <div className="hero-actions">
+              <a href={`mailto:${CONTACT}?subject=Demonstra%C3%A7%C3%A3o`} className="btn btn-solid btn-lg">Agendar demonstração</a>
+              <a href="#plataforma" className="btn btn-ghost btn-lg">Ver o que já funciona</a>
+            </div>
+          </WebGisMock>
+        </section>
 
-      <section id="problema" className="problem">
-        <div className="container">
-          <h2>O desafio do bananicultor</h2>
-          <div className="problem-cards">
-            <div className="problem-card">
-              <div className="problem-icon">
-                <Icon name="flood" className="icon-32" />
-              </div>
-              <h3>Risco de Inundação</h3>
-              <p>O Vale do Ribeira é suscetível a eventos de enchente que podem destruir plantações e infraestrutura.</p>
-            </div>
-            <div className="problem-card">
-              <div className="problem-icon">
-                <Icon name="satellite" className="icon-32" />
-              </div>
-              <h3>Falta de Monitoramento</h3>
-              <p>Monitoramento manual de áreas extensas é inviável e não permite antecipação de problemas.</p>
-            </div>
-            <div className="problem-card">
-              <div className="problem-icon">
-                <Icon name="connectivity" className="icon-32" />
-              </div>
-              <h3>Conectividade Rural</h3>
-              <p>Áreas remotas enfrentam limitações de conectividade que dificultam o acesso a informações atualizadas.</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section id="publicos" className="audiences">
-        <div className="container">
-          <h2>Para quem é a Ribeira Conecta</h2>
-          <p className="subtitle">
-            Uma mesma base de dados territorial, com três formas de valor.
-          </p>
-          <div className="audience-grid">
-            <article className="audience-card">
-              <h3>Produtores</h3>
-              <p>
-                Veja a propriedade no mapa, acompanhe a vegetação por satélite e o nível dos rios,
-                e registre colheita, adubação, custos e vendas por talhão.
+        <section id="plataforma" className="band">
+          <div className="wrap split">
+            <div className="split-head">
+              <p className="kicker">Plataforma</p>
+              <h2>Uma camada de cada vez, sobre o mesmo território.</h2>
+              <p className="muted">
+                O Vale do Ribeira vive de banana e de rio. A plataforma junta o que hoje está espalhado em
+                cadernos, planilhas e portais públicos.
               </p>
-              <a href="#erp" className="audience-link">Ver o ERP da banana</a>
-            </article>
-            <article className="audience-card">
-              <h3>Investidores</h3>
-              <p>
-                Produto em construção com base técnica auditável: dados separados por produtor,
-                registros que não são apagados e um painel público do que já funciona e do que ainda não.
-              </p>
-              <a href="#transparencia" className="audience-link">Ver o estágio atual</a>
-            </article>
-            <article className="audience-card">
-              <h3>Parceiros</h3>
-              <p>
-                Cooperativas, associações, consultorias e empresas de conectividade e insumos:
-                dados territoriais compartilhados com permissão do produtor, a partir de fontes oficiais abertas.
-              </p>
-              <a href="#contato" className="audience-link">Propor uma parceria</a>
-            </article>
+            </div>
+            <ol className="ledger">
+              {LAYER_ROWS.map((row, index) => (
+                <li key={row.name} className="ledger-row">
+                  <span className="mono index">{String(index + 1).padStart(2, "0")}</span>
+                  <div>
+                    <h3>{row.name}</h3>
+                    <p>{row.text}</p>
+                  </div>
+                  <StatusTag status={row.status} />
+                </li>
+              ))}
+            </ol>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section id="ecossistema" className="ecosystem">
-        <div className="container">
-          <h2>Ecossistema de valor</h2>
-          <p className="subtitle">
-            Soluções integradas para transformar sua propriedade em uma operação inteligente.
-            Cada item classificado conforme estado de desenvolvimento comprovado.
-          </p>
-          <div className="ecosystem-grid">
-            <div className="ecosystem-item">
-              <div className="ecosystem-icon">
-                <Icon name="connectivity" className="icon-48" />
-              </div>
-              <h3>Conectividade Rural</h3>
-              <p>Soluções de conectividade para áreas remotas do Vale do Ribeira.</p>
-              <StatusBadge status="planejado" label="Em planejamento" />
-            </div>
-            <div className="ecosystem-item">
-              <div className="ecosystem-icon">
-                <Icon name="satellite" className="icon-48" />
-              </div>
-              <h3>Monitoramento Satelital</h3>
-              <p>Acompanhamento periódico da vegetação por imagens de satélite.</p>
-              <StatusBadge status="disponivel" label="Disponível" />
-            </div>
-            <div className="ecosystem-item">
-              <div className="ecosystem-icon">
-                <Icon name="intelligence" className="icon-48" />
-              </div>
-              <h3>Inteligência Territorial</h3>
-              <p>Análise de dados geoespaciais para tomada de decisão operacional.</p>
-              <StatusBadge status="disponivel" label="Disponível" />
-            </div>
-            <div className="ecosystem-item">
-              <div className="ecosystem-icon">
-                <Icon name="flood" className="icon-48" />
-              </div>
-              <h3>Risco de Inundação</h3>
-              <p>Monitoramento hidrológico e avaliação de exposição a inundações.</p>
-              <StatusBadge status="disponivel" label="Disponível" />
-            </div>
-            <div className="ecosystem-item">
-              <div className="ecosystem-icon">
-                <Icon name="geospatial" className="icon-48" />
-              </div>
-              <h3>Gestão de Talhões</h3>
-              <p>Boundary management, digitalização e análise espacial de áreas.</p>
-              <StatusBadge status="disponivel" label="Disponível" />
-            </div>
-            <div className="ecosystem-item">
-              <div className="ecosystem-icon">
-                <Icon name="erp" className="icon-48" />
-              </div>
-              <h3>ERP Bananicultura</h3>
-              <p>Sistema especializado para gestão da cadeia bananeira, em construção.</p>
-              <StatusBadge status="em-desenvolvimento" label="Em desenvolvimento" />
-            </div>
-            <div className="ecosystem-item">
-              <div className="ecosystem-icon">
-                <Icon name="service" className="icon-48" />
-              </div>
-              <h3>Serviços Profissionais</h3>
-              <p>Consultoria especializada em inteligência territorial agrícola.</p>
-              <StatusBadge status="planejado" label="Sob consulta" />
+        <section id="publicos" className="band band-alt">
+          <div className="wrap">
+            <p className="kicker">Para quem</p>
+            <h2>Uma base de dados, três formas de valor.</h2>
+            <div className="columns">
+              {AUDIENCES.map((audience, index) => (
+                <article key={audience.who} className="column">
+                  <span className="mono index">{String(index + 1).padStart(2, "0")}</span>
+                  <h3>{audience.who}</h3>
+                  <p>{audience.text}</p>
+                  <a href={audience.href} className="text-link">{audience.cta}</a>
+                </article>
+              ))}
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section id="geoespacial" className="geospatial">
-        <div className="container">
-          <h2>Mapa da propriedade, no estilo WebGIS</h2>
-          <p className="subtitle">
-            Mapa interativo com limites, talhões e camadas de satélite, pensado para a rotina da propriedade rural.
-          </p>
-          <div className="geospatial-grid">
-            <div className="geospatial-feature">
-              <Icon name="map" className="icon-32" />
-              <h3>Mapa interativo</h3>
-              <p>Visualização interativa do território com camadas geoespaciais.</p>
-              <StatusBadge status="disponivel" label="Disponível" />
+        <section id="erp" className="band">
+          <div className="wrap split">
+            <div className="split-head">
+              <p className="kicker">Gestão da banana</p>
+              <h2>ERP Especializado em Bananicultura</h2>
+              <p className="muted">
+                Desenhado a partir de entrevistas com produtores. Dado que o produtor não anotou aparece
+                como “sem registro”: o sistema não inventa valores.
+              </p>
+              <p className="note">Ainda não está disponível para contratação.</p>
             </div>
-            <div className="geospatial-feature">
-              <Icon name="satellite" className="icon-32" />
-              <h3>Camadas Satelitais</h3>
-              <p>Acesso a imagens de satélite para monitoramento da vegetação.</p>
-              <StatusBadge status="disponivel" label="Disponível" />
-            </div>
-            <div className="geospatial-feature">
-              <Icon name="connectivity" className="icon-32" />
-              <h3>Geoprocessamento</h3>
-              <p>Cálculos de distância, área e análise espacial de propriedades.</p>
-              <StatusBadge status="disponivel" label="Disponível" />
+            <ul className="ledger ledger-plain">
+              {ERP_MODULES.map(([title, text]) => (
+                <li key={title} className="ledger-row">
+                  <div>
+                    <h3>{title}</h3>
+                    <p>{text}</p>
+                  </div>
+                  <StatusTag status="building" />
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+
+        <section id="estagio" className="band band-alt">
+          <div className="wrap">
+            <p className="kicker">Estágio</p>
+            <h2>Em que estágio estamos.</h2>
+            <p className="muted lead-narrow">
+              Preferimos mostrar o que existe de verdade. Os selos desta página seguem o estado real do desenvolvimento.
+            </p>
+            <div className="columns">
+              {STAGES.map((stage) => (
+                <div key={stage.title} className="column">
+                  <StatusTag status={stage.status} />
+                  <ul className="plain-list">
+                    {stage.items.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
             </div>
           </div>
-          <div className="geospatial-demo">
-            <div className="demo-overlay">
-              <span className="demo-label">Ilustração</span>
+        </section>
+
+        <section id="sobre" className="band">
+          <div className="wrap split">
+            <div className="split-head">
+              <p className="kicker">Sobre</p>
+              <h2>Ribeira Conecta</h2>
+            </div>
+            <div className="prose">
               <p>
-                A imagem no topo da página é uma ilustração com dados fictícios, no estilo da tela de mapa do app.
-                Os dados reais de cada propriedade aparecem só depois do login, a partir do limite cadastrado
-                e das fontes de satélite disponíveis.
+                Startup de inteligência territorial focada no Vale do Ribeira, região produtora de banana.
+                Nossa missão é levar dados geoespaciais e gestão simples às propriedades rurais, transformando
+                informação em decisão de campo.
               </p>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section id="hydrology" className="hydrology">
-        <div className="container">
-          <h2>Hidrologia e monitoramento de rios</h2>
-          <p className="subtitle">
-            Integração com fontes oficiais para acompanhar o nível de rios,
-            pluviometria e vazão.
-          </p>
-          <div className="hydrology-info">
-            <div className="hydrology-item">
-              <div className="hydrology-header">
-                <Icon name="flood" className="icon-32" />
-                <h3>Monitoramento de Nível de Rios</h3>
-              </div>
-              <p>
-                Integração com SP Águas SIBH e ANA HidroWebService para dados oficiais.
-                <StatusBadge status="disponivel" label="Disponível" />
-              </p>
+        <section id="contato" className="band band-alt">
+          <div className="wrap split">
+            <div className="split-head">
+              <p className="kicker">Contato</p>
+              <h2>Converse com nossa equipe.</h2>
+              <p className="muted">Demonstração, parceria ou dúvida: escolha o seu perfil e escreva.</p>
+              <a className="text-link mono" href={`mailto:${CONTACT}`}>{CONTACT}</a>
             </div>
-            <div className="hydrology-item">
-              <div className="hydrology-header">
-                <Icon name="satellite" className="icon-32" />
-                <h3>Pluviometria</h3>
-              </div>
-              <p>
-                Dados de chuva de estações oficiais da região, quando disponíveis.
-                <StatusBadge status="disponivel" label="Disponível" />
-              </p>
-            </div>
-            <div className="hydrology-item">
-              <div className="hydrology-header">
-                <Icon name="connectivity" className="icon-32" />
-                <h3>Vazão e Cota</h3>
-              </div>
-              <p>
-                Monitoramento de vazão e cota de rios para avaliação de risco.
-                <StatusBadge status="disponivel" label="Disponível" />
-              </p>
-            </div>
+            <form className="form" onSubmit={handleContact}>
+              <label>
+                Nome
+                <input type="text" name="name" required autoComplete="name" />
+              </label>
+              <label>
+                E-mail
+                <input type="email" name="email" required autoComplete="email" />
+              </label>
+              <label>
+                Eu sou
+                <select name="profile" defaultValue="Produtor">
+                  <option>Produtor</option>
+                  <option>Investidor</option>
+                  <option>Parceiro</option>
+                  <option>Outro</option>
+                </select>
+              </label>
+              <label>
+                Telefone
+                <input type="tel" name="phone" autoComplete="tel" />
+              </label>
+              <label className="form-wide">
+                Mensagem
+                <textarea name="message" rows={4} required />
+              </label>
+              <button type="submit" className="btn btn-solid">Enviar mensagem</button>
+            </form>
           </div>
-        </div>
-      </section>
+        </section>
+      </main>
 
-      <section id="erp" className="erp">
-        <div className="container">
-          <h2>ERP Especializado em Bananicultura</h2>
-          <p className="subtitle">
-            Sistema de gestão em desenvolvimento para a cadeia produtiva bananeira, desenhado a partir
-            de entrevistas com produtores. Os módulos abaixo estão em construção, sem data de entrega assumida.
-          </p>
-          <div className="erp-preview">
-            {[
-              ["Colheita por talhão", "Cachos, caixas, peso e descarte por talhão."],
-              ["Adubação e insumos", "O que foi aplicado, onde e quando."],
-              ["Estoque de insumos", "Entradas, saídas e saldo por produto."],
-              ["Custos por talhão e por kg", "Custo registrado; sem dado, mostra “sem registro”."],
-              ["Vendas e recebimentos", "Comprador, valor a receber e prazo de pagamento."],
-              ["Relatório para o contador", "Vendas e custos do período em planilha."],
-            ].map(([title, text]) => (
-              <div className="erp-module" key={title}>
-                <Icon name="erp" className="icon-48" />
-                <h3>{title}</h3>
-                <p>{text}</p>
-                <StatusBadge status="em-desenvolvimento" label="Em desenvolvimento" />
-              </div>
-            ))}
-          </div>
-          <div className="erp-note">
-            <strong>Nota:</strong> o ERP Bananicultura ainda não está disponível para contratação.
-            Dado que o produtor não anotou aparece como “sem registro”; o sistema não inventa valores.
-          </div>
-        </div>
-      </section>
-
-      <section id="servicos" className="services">
-        <div className="container">
-          <h2>Serviços Profissionais</h2>
-          <p className="subtitle">
-           Consultoria especializada em inteligência territorial aplicada à agricultura.
-            Transformamos dados em decisão operacional.
-          </p>
-          <div className="services-list">
-            <div className="service-item">
-              <h3>Análise Territorial</h3>
-              <p>Diagnóstico geoespacial de propriedades rurais com foco em riscos ambientais e oportunidades operacionais.</p>
-            </div>
-            <div className="service-item">
-              <h3>Implementação de Monitoring</h3>
-              <p>Configuração de sensores, câmeras e sistemas de coleta de dados para monitoramento contínuo.</p>
-            </div>
-            <div className="service-item">
-              <h3>Capacitação e Treinamento</h3>
-              <p>Workshops e treinamentos para equipes operacionais utilizarem a plataforma de forma eficaz.</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section id="transparencia" className="transparency">
-        <div className="container">
-          <h2>Em que estágio estamos</h2>
-          <p className="subtitle">
-            Preferimos mostrar o que existe de verdade. Os selos desta página seguem o estado real do desenvolvimento.
-          </p>
-          <ul className="stage-list">
-            <li><StatusBadge status="disponivel" label="Funcionando" /> Cadastro de propriedade e talhões, mapa, índice de vegetação por satélite e painel de hidrologia.</li>
-            <li><StatusBadge status="em-desenvolvimento" label="Em desenvolvimento" /> ERP da banana: colheita, adubação, estoque, custos, vendas e relatório para o contador.</li>
-            <li><StatusBadge status="planejado" label="Em planejamento" /> Conectividade rural e serviços de campo.</li>
-          </ul>
-        </div>
-      </section>
-
-      <section id="sobre" className="about">
-        <div className="container">
-          <h2>Sobre a Ribeira Conecta</h2>
-          <div className="about-content">
-            <div className="about-text">
-              <p>
-                A Ribeira Conecta é uma startup de inteligência territorial focada no Vale do Ribeira,
-                região produtora de banana reconhecida nacionalmente. Nossa missão é levar tecnologia
-                de ponta às propriedades rurais, transformando dados em decisão operacional.
-              </p>
-              <p>
-                Especialistas em geoespacial, sensoriamento remoto e inteligência de dados,
-                trabalhamos para construir a próxima geração de ferramentas para agricultura
-                de precisão e sustentabilidade.
-              </p>
-            </div>
-            <div className="about-map">
-              <div className="map-placeholder">
-                <Icon name="map" className="icon-64" />
-                <p>Vale do Ribeira</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section id="contato" className="contact">
-        <div className="container">
-          <h2>Converse com nossa equipe</h2>
-          <p className="subtitle">
-            Quer saber como a Ribeira Conecta pode transformar sua operação?
-            Entre em contato para agendar uma demonstração personalizada.
-          </p>
-          <div className="contact-info">
-            <a href="mailto:contato@ribeiraconecta.com.br" className="contact-btn">
-              contato@ribeiraconecta.com.br
-            </a>
-          </div>
-          <form className="contact-form" onSubmit={handleContact}>
-            <div className="form-group">
-              <label htmlFor="name">Nome</label>
-              <input type="text" id="name" name="name" required />
-            </div>
-            <div className="form-group">
-              <label htmlFor="email">E-mail</label>
-              <input type="email" id="email" name="email" required />
-            </div>
-            <div className="form-group">
-              <label htmlFor="profile">Eu sou</label>
-              <select id="profile" name="profile" defaultValue="Produtor">
-                <option>Produtor</option>
-                <option>Investidor</option>
-                <option>Parceiro</option>
-                <option>Outro</option>
-              </select>
-            </div>
-            <div className="form-group">
-              <label htmlFor="phone">Telefone</label>
-              <input type="tel" id="phone" name="phone" />
-            </div>
-            <div className="form-group">
-              <label htmlFor="message">Mensagem</label>
-              <textarea id="message" name="message" rows={5} required />
-            </div>
-            <button type="submit" className="btn-primary">
-              Enviar mensagem
-            </button>
-          </form>
-        </div>
-      </section>
-
-      <footer className="footer">
-        <div className="container">
-          <div className="footer-content">
-            <div className="footer-logo">
-              <h3>Ribeira Conecta</h3>
-              <p>Inteligência territorial para bananicultura</p>
-            </div>
-            <div className="footer-links">
-              <div className="footer-section">
-                <h4>Plataforma</h4>
-                <a href="#geoespacial">Geoespacial</a>
-                <a href="#hydrology">Hidrologia</a>
-                <a href="#erp">ERP Bananicultura</a>
-              </div>
-              <div className="footer-section">
-                <h4>Empresa</h4>
-                <a href="#sobre">Sobre</a>
-                <a href="#servicos">Serviços</a>
-                <a href="#contato">Contato</a>
-              </div>
-              <div className="footer-section">
-                <h4>Contato</h4>
-                <a href="mailto:contato@ribeiraconecta.com.br">contato@ribeiraconecta.com.br</a>
-              </div>
-            </div>
-          </div>
-          <div className="footer-bottom">
-            <p>&copy; 2026 Ribeira Conecta. Todos os direitos reservados.</p>
-          </div>
+      <footer className="site-footer">
+        <div className="wrap footer-inner">
+          <span className="brand-plain">Ribeira Conecta</span>
+          <span className="muted">Inteligência territorial para a cadeia da banana.</span>
+          <span className="muted mono">© 2026 Ribeira Conecta</span>
         </div>
       </footer>
     </div>
