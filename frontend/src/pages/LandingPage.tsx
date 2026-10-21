@@ -175,6 +175,9 @@ export function LandingPage() {
           >
             <Icon name={mobileMenuOpen ? "close" : "menu"} />
           </button>
+          <a href="/?entrar=1" className="btn-secondary header-login">
+            Entrar
+          </a>
           <a href="mailto:contato@ribeiraconecta.com.br" className="btn-primary">
             Fale conosco
           </a>
@@ -481,7 +484,6 @@ export function LandingPage() {
             <li><StatusBadge status="em-desenvolvimento" label="Em desenvolvimento" /> ERP da banana: colheita, adubação, estoque, custos, vendas e relatório para o contador.</li>
             <li><StatusBadge status="planejado" label="Em planejamento" /> Conectividade rural e serviços de campo.</li>
           </ul>
-          <p className="stage-note">Piloto em andamento em propriedade produtora do Vale do Ribeira.</p>
         </div>
       </section>
 

@@ -1045,3 +1045,8 @@ body {
   color: var(--color-text-muted);
   font-size: var(--font-size-body-sm);
 }
+
+.header-login {
+  margin-left: auto;
+  margin-right: var(--spacing-sm);
+}

@@ -16,6 +16,13 @@ const siteMode = import.meta.env.VITE_RIBEIRA_SITE_MODE;
 const LandingPage = lazy(() => import("./pages/LandingPage").then((m) => ({ default: m.LandingPage })));
 const authMode = import.meta.env.VITE_RIBEIRA_AUTH_MODE ?? "development";
 
+// Na origem pública, "/" é a landing page. O app só abre quando a pessoa pede
+// para entrar (?entrar=1) ou quando o provedor OIDC devolve para "/" com ?code=/?error=.
+function wantsApp(search: string) {
+  const query = new URLSearchParams(search);
+  return query.has("entrar") || query.has("code") || query.has("error");
+}
+
 function workspace(sessionToken: string, configuredApiUrl: string) {
   return <PilotShell api={new Farm360Api(configuredApiUrl, sessionToken)} apiBaseUrl={configuredApiUrl} tenantId={tenantId} initialPropertyId={propertyId} token={sessionToken} />;
 }
@@ -23,6 +30,9 @@ function workspace(sessionToken: string, configuredApiUrl: string) {
 export default function App() {
   // Build do site público (divulgação): só a landing page, sem API nem login.
   if (siteMode === "landing") {
+    return <Suspense fallback={<main className="state">Carregando…</main>}><LandingPage /></Suspense>;
+  }
+  if (authMode === "oidc" && !wantsApp(window.location.search)) {
     return <Suspense fallback={<main className="state">Carregando…</main>}><LandingPage /></Suspense>;
   }
   let apiUrl: string | undefined;
@@ -46,7 +56,7 @@ export default function App() {
       VITE_RIBEIRA_OIDC_TOKEN_ENDPOINT: import.meta.env.VITE_RIBEIRA_OIDC_TOKEN_ENDPOINT,
       VITE_RIBEIRA_PUBLIC_ORIGIN: frontendEnvironment.VITE_RIBEIRA_PUBLIC_ORIGIN,
     });
-    return <OidcSession config={oidcConfiguration}>{sessionToken => workspace(sessionToken, apiUrl)}</OidcSession>;
+    return <OidcSession config={oidcConfiguration} autoStart={new URLSearchParams(window.location.search).has("entrar")}>{sessionToken => workspace(sessionToken, apiUrl)}</OidcSession>;
   } catch {
     return <main className="state">Configuração OIDC necessária.</main>;
   }
