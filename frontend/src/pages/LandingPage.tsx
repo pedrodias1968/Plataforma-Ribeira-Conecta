@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import "./LandingPage.css";
+import { WebGisMock } from "./WebGisMock";
 
 type StatusBadgeProps = {
   status: "disponivel" | "em-desenvolvimento" | "planejado";
@@ -178,6 +179,7 @@ export function LandingPage() {
               Conhecer a plataforma
             </a>
           </div>
+          <WebGisMock />
         </div>
       </section>
 
@@ -307,10 +309,11 @@ export function LandingPage() {
           </div>
           <div className="geospatial-demo">
             <div className="demo-overlay">
-              <span className="demo-label">Demonstração</span>
+              <span className="demo-label">Ilustração</span>
               <p>
-                Esta é uma demonstração visual do potencial da plataforma.
-                Os dados reais requerem integração com fontes satelitais e cadastros cadastrais.
+                A imagem no topo da página é uma ilustração com dados fictícios, no estilo da tela de mapa do app.
+                Os dados reais de cada propriedade aparecem só depois do login, a partir do limite cadastrado
+                e das fontes de satélite disponíveis.
               </p>
             </div>
           </div>

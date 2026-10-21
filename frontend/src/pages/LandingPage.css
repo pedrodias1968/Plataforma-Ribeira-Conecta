@@ -168,13 +168,13 @@ body {
 }
 
 .hero {
-  padding-top: calc(160px + var(--spacing-xl));
+  padding-top: calc(96px + var(--spacing-lg));
   padding-bottom: var(--spacing-xl);
   background: radial-gradient(circle at top, rgba(22, 163, 74, 0.1) 0%, transparent 50%);
 }
 
 .hero .container {
-  max-width: 960px;
+  max-width: 1160px;
   text-align: center;
 }
 

@@ -1,0 +1,152 @@
+.webgis {
+  margin: 40px auto 0;
+  max-width: 1100px;
+  background: #0a0e17;
+  border: 1px solid #1e293b;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+  text-align: left;
+}
+
+.webgis-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 14px;
+  background: #121824;
+  border-bottom: 1px solid #1e293b;
+  font-size: 12px;
+  color: #cbd5e1;
+}
+
+.webgis-search,
+.webgis-chip {
+  padding: 6px 10px;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  background: #0a0e17;
+}
+
+.webgis-search {
+  min-width: 170px;
+  color: #6b7280;
+}
+
+.webgis-flag {
+  margin-left: auto;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #f59e0b;
+  color: #0a0e17;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.webgis-body {
+  display: grid;
+  grid-template-columns: 190px 1fr 220px;
+  min-height: 360px;
+}
+
+.webgis-layers,
+.webgis-info {
+  padding: 14px;
+  background: #121824;
+  color: #cbd5e1;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.webgis-layers {
+  border-right: 1px solid #1e293b;
+}
+
+.webgis-info {
+  border-left: 1px solid #1e293b;
+}
+
+.webgis-layers strong,
+.webgis-info strong {
+  color: #f8fafc;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.webgis-layers label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.webgis-info dl {
+  margin: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.webgis-info dt {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.webgis-info dd {
+  margin: 0 0 6px;
+  color: #f8fafc;
+}
+
+.webgis-info p {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.webgis-map {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 300px;
+}
+
+.webgis-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 14px;
+  background: #121824;
+  border-top: 1px solid #1e293b;
+  font-size: 12px;
+  color: #cbd5e1;
+}
+
+.webgis-ramp {
+  width: 140px;
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #92400e, #facc15, #15803d);
+}
+
+.webgis-note {
+  margin-left: auto;
+  color: #94a3b8;
+}
+
+@media (max-width: 900px) {
+  .webgis-body {
+    grid-template-columns: 1fr;
+  }
+
+  .webgis-layers,
+  .webgis-info {
+    display: none;
+  }
+
+  .webgis-note {
+    margin-left: 0;
+  }
+}
