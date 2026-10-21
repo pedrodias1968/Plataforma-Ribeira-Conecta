@@ -2647,3 +2647,50 @@ class RibeiraApplication:
                 date_to=end,
                 as_of=as_of_date,
             )
+
+    def accountant_report(
+        self,
+        tenant_id: str,
+        property_id: str,
+        *,
+        date_from: str,
+        date_to: str,
+        as_of: str | None = None,
+        platform_admin: bool = False,
+    ) -> dict[str, Any]:
+        """Read-only package for the accountant: sales, receipts and costs of a period.
+
+        No result/margin is computed: sales and costs are recorded facts of the
+        period and are not matched to each other (different crops, payment dates).
+        """
+        if not date_from or not date_to:
+            raise SalesValidationError("date_from and date_to are required")
+        sales = self.sales_summary(
+            tenant_id,
+            property_id,
+            date_from=date_from,
+            date_to=date_to,
+            as_of=as_of,
+            platform_admin=platform_admin,
+        )
+        costs = self.cost_summary(
+            tenant_id,
+            property_id,
+            date_from=date_from,
+            date_to=date_to,
+            platform_admin=platform_admin,
+        )
+        return {
+            "property_id": property_id,
+            "date_from": date_from,
+            "date_to": date_to,
+            "as_of": sales["as_of"],
+            "classification": DataClassification.CALCULATED.value,
+            "sales": sales,
+            "costs": costs,
+            "limitations": [
+                "Relatório de registros do sistema; não substitui escrituração contábil nem nota fiscal.",
+                "Não há resultado/margem: vendas e custos do período não são pareados entre si.",
+                "Valor sem registro é desconhecido, não zero.",
+            ],
+        }
