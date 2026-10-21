@@ -227,6 +227,14 @@ for _role in ("ANALYST", "TENANT_ADMIN", "MANAGER"):
 for _role in ("TENANT_ADMIN", "MANAGER"):
     ROLE_PERMISSIONS[_role] = ROLE_PERMISSIONS[_role] | frozenset({_COST_WRITE})
 
+# Sales and receivables are financial data with the same access as costs.
+_SALE_READ = "sale:read"
+_SALE_WRITE = "sale:write"
+for _role in ("ANALYST", "TENANT_ADMIN", "MANAGER"):
+    ROLE_PERMISSIONS[_role] = ROLE_PERMISSIONS[_role] | frozenset({_SALE_READ})
+for _role in ("TENANT_ADMIN", "MANAGER"):
+    ROLE_PERMISSIONS[_role] = ROLE_PERMISSIONS[_role] | frozenset({_SALE_WRITE})
+
 
 class AuthenticationError(PermissionError):
     def __init__(

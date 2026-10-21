@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from decimal import Decimal
 import hashlib
 import json
@@ -62,6 +63,16 @@ from .harvest import (
     validate_harvest_discard,
     validate_harvest_measures,
 )
+from .sales import (
+    PaymentRecord,
+    SaleRecord,
+    SalesConflict,
+    SalesRepository,
+    SalesValidationError,
+    summarize_sales,
+    validate_payment_amount,
+    validate_sale,
+)
 from .soil import (
     SoilLabAnalysis,
     SoilRepository,
@@ -107,6 +118,7 @@ class RibeiraApplication:
         self.harvest = HarvestRepository(self.store)
         self.fertilization = FertilizationRepository(self.store)
         self.costs = CostRepository(self.store)
+        self.sales = SalesRepository(self.store)
         registry = default_copernicus_registry()
         self.geospatial_provider = geospatial_provider or CopernicusStacAdapter(
             registry
@@ -2249,4 +2261,389 @@ class RibeiraApplication:
                 ),
                 date_from=start,
                 date_to=end,
+            )
+
+    # ------------------------------------------------------------------
+    # Sales and receivables (vendas e recebimentos)
+    # ------------------------------------------------------------------
+
+    def register_sale(
+        self,
+        tenant_id: str,
+        property_id: str,
+        *,
+        sale_date: str,
+        buyer_name: str,
+        quantity: float | None = None,
+        quantity_unit: str | None = None,
+        unit_price_brl: float | None = None,
+        price_unit: str | None = None,
+        total_amount_brl: float | None = None,
+        expected_payment_date: str | None = None,
+        recorded_by: str,
+        source_reference: str,
+        classification: DataClassification = DataClassification.MANUAL_CONFIRMED,
+        notes: str | None = None,
+        actor: str = "system",
+        platform_admin: bool = False,
+        supersedes_id: str | None = None,
+        correction_reason: str | None = None,
+    ) -> SaleRecord:
+        """Register a sale. Absent values stay unknown; the total is never computed."""
+        date_value = parse_record_date(sale_date, label="sale_date")
+        qty, qty_unit, price, price_u, total, due = validate_sale(
+            sale_date=date_value,
+            quantity=quantity,
+            quantity_unit=quantity_unit,
+            unit_price_brl=unit_price_brl,
+            price_unit=price_unit,
+            total_amount_brl=total_amount_brl,
+            expected_payment_date=expected_payment_date,
+        )
+        validate_classification(classification)
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            if self.store.get_property(tenant_id, property_id) is None:
+                raise LookupError("property not found in tenant")
+            item = SaleRecord(
+                id=new_id(),
+                tenant_id=tenant_id,
+                property_id=property_id,
+                sale_date=date_value,
+                buyer_name=clean_required(buyer_name, "buyer_name"),
+                quantity=qty,
+                quantity_unit=qty_unit,
+                unit_price_brl=price,
+                price_unit=price_u,
+                total_amount_brl=total,
+                expected_payment_date=due,
+                recorded_by=clean_required(recorded_by, "recorded_by"),
+                source_reference=clean_required(source_reference, "source_reference"),
+                classification=classification,
+                notes=clean_optional(notes, "notes"),
+                supersedes_id=supersedes_id,
+                created_at=now_utc(),
+            )
+            self.sales.create_sale(item)
+            self._create_harvest_evidence(
+                tenant_id,
+                evidence_type="SALE_RECORD",
+                reference_id=item.id,
+                classification=classification,
+                observed_date=date_value,
+                transformation=(
+                    "sale registered from a person's record"
+                    if supersedes_id is None
+                    else "sale correction that supersedes a previous record"
+                ),
+                limitations=[
+                    "absent quantity, price, total and due date are unknown, not zero",
+                    "the total is as informed; it is not computed from quantity and price",
+                    "a sale record does not prove delivery or payment",
+                ],
+            )
+            self.store.audit(
+                tenant_id,
+                actor,
+                "SALE_REGISTERED" if supersedes_id is None else "SALE_CORRECTED",
+                "sale_record",
+                item.id,
+                {
+                    "property_id": property_id,
+                    "sale_date": date_value,
+                    "buyer_name": item.buyer_name,
+                    "quantity": qty,
+                    "quantity_unit": qty_unit,
+                    "total_amount_brl": total,
+                    "supersedes_id": supersedes_id,
+                    "correction_reason": correction_reason,
+                },
+                new_id(),
+                now_utc(),
+            )
+            return item
+
+    def correct_sale(
+        self,
+        tenant_id: str,
+        sale_id: str,
+        *,
+        correction_reason: str,
+        sale_date: str,
+        buyer_name: str,
+        quantity: float | None = None,
+        quantity_unit: str | None = None,
+        unit_price_brl: float | None = None,
+        price_unit: str | None = None,
+        total_amount_brl: float | None = None,
+        expected_payment_date: str | None = None,
+        recorded_by: str,
+        source_reference: str,
+        classification: DataClassification = DataClassification.MANUAL_CONFIRMED,
+        notes: str | None = None,
+        actor: str = "system",
+        platform_admin: bool = False,
+    ) -> SaleRecord:
+        """Correct a sale by registering a new one that supersedes it.
+
+        Payments already registered keep counting for the corrected sale.
+        """
+        reason = clean_required(correction_reason, "correction_reason")
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            original = self.sales.get_sale(tenant_id, sale_id)
+            if original is None:
+                raise LookupError("sale not found in tenant")
+            if self.sales.sale_was_corrected(tenant_id, sale_id):
+                raise SalesConflict("sale was already corrected")
+            return self.register_sale(
+                tenant_id,
+                original.property_id,
+                sale_date=sale_date,
+                buyer_name=buyer_name,
+                quantity=quantity,
+                quantity_unit=quantity_unit,
+                unit_price_brl=unit_price_brl,
+                price_unit=price_unit,
+                total_amount_brl=total_amount_brl,
+                expected_payment_date=expected_payment_date,
+                recorded_by=recorded_by,
+                source_reference=source_reference,
+                classification=classification,
+                notes=notes,
+                actor=actor,
+                platform_admin=platform_admin,
+                supersedes_id=original.id,
+                correction_reason=reason,
+            )
+
+    def list_sales(
+        self,
+        tenant_id: str,
+        property_id: str,
+        *,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        include_superseded: bool = False,
+        platform_admin: bool = False,
+    ) -> list[SaleRecord]:
+        start = parse_filter_date(date_from, label="date_from")
+        end = parse_filter_date(date_to, label="date_to")
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            if self.store.get_property(tenant_id, property_id) is None:
+                raise LookupError("property not found in tenant")
+            return self.sales.list_sales(
+                tenant_id,
+                property_id,
+                date_from=start,
+                date_to=end,
+                include_superseded=include_superseded,
+            )
+
+    def _write_payment(
+        self,
+        tenant_id: str,
+        sale: SaleRecord,
+        *,
+        payment_date: str,
+        amount_brl: float,
+        method: str | None,
+        recorded_by: str,
+        source_reference: str,
+        classification: DataClassification,
+        notes: str | None,
+        actor: str,
+        supersedes_id: str | None,
+        correction_reason: str | None,
+    ) -> PaymentRecord:
+        date_value = parse_record_date(payment_date, label="payment_date")
+        if date_value < sale.sale_date:
+            raise SalesValidationError("payment_date cannot be before the sale date")
+        amount = validate_payment_amount(amount_brl)
+        validate_classification(classification)
+        item = PaymentRecord(
+            id=new_id(),
+            tenant_id=tenant_id,
+            property_id=sale.property_id,
+            sale_id=sale.id,
+            payment_date=date_value,
+            amount_brl=amount,
+            method=clean_optional(method, "method"),
+            recorded_by=clean_required(recorded_by, "recorded_by"),
+            source_reference=clean_required(source_reference, "source_reference"),
+            classification=classification,
+            notes=clean_optional(notes, "notes"),
+            supersedes_id=supersedes_id,
+            created_at=now_utc(),
+        )
+        self.sales.create_payment(item)
+        self._create_harvest_evidence(
+            tenant_id,
+            evidence_type="PAYMENT_RECORD",
+            reference_id=item.id,
+            classification=classification,
+            observed_date=date_value,
+            transformation=(
+                "payment registered from a person's record"
+                if supersedes_id is None
+                else "payment correction that supersedes a previous record"
+            ),
+            limitations=[
+                "a payment record is as informed; it is not checked against a bank statement",
+            ],
+        )
+        self.store.audit(
+            tenant_id,
+            actor,
+            "PAYMENT_REGISTERED" if supersedes_id is None else "PAYMENT_CORRECTED",
+            "payment_record",
+            item.id,
+            {
+                "property_id": sale.property_id,
+                "sale_id": sale.id,
+                "payment_date": date_value,
+                "amount_brl": amount,
+                "supersedes_id": supersedes_id,
+                "correction_reason": correction_reason,
+            },
+            new_id(),
+            now_utc(),
+        )
+        return item
+
+    def register_payment(
+        self,
+        tenant_id: str,
+        sale_id: str,
+        *,
+        payment_date: str,
+        amount_brl: float,
+        method: str | None = None,
+        recorded_by: str,
+        source_reference: str,
+        classification: DataClassification = DataClassification.MANUAL_CONFIRMED,
+        notes: str | None = None,
+        actor: str = "system",
+        platform_admin: bool = False,
+    ) -> PaymentRecord:
+        """Register a payment received for the current version of a sale."""
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            sale = self.sales.get_sale(tenant_id, sale_id)
+            if sale is None:
+                raise LookupError("sale not found in tenant")
+            if self.sales.sale_was_corrected(tenant_id, sale_id):
+                raise SalesConflict(
+                    "sale was corrected; register the payment against the current version"
+                )
+            return self._write_payment(
+                tenant_id,
+                sale,
+                payment_date=payment_date,
+                amount_brl=amount_brl,
+                method=method,
+                recorded_by=recorded_by,
+                source_reference=source_reference,
+                classification=classification,
+                notes=notes,
+                actor=actor,
+                supersedes_id=None,
+                correction_reason=None,
+            )
+
+    def correct_payment(
+        self,
+        tenant_id: str,
+        payment_id: str,
+        *,
+        correction_reason: str,
+        payment_date: str,
+        amount_brl: float,
+        method: str | None = None,
+        recorded_by: str,
+        source_reference: str,
+        classification: DataClassification = DataClassification.MANUAL_CONFIRMED,
+        notes: str | None = None,
+        actor: str = "system",
+        platform_admin: bool = False,
+    ) -> PaymentRecord:
+        """Correct a payment; it keeps the sale version it was registered against."""
+        reason = clean_required(correction_reason, "correction_reason")
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            original = self.sales.get_payment(tenant_id, payment_id)
+            if original is None:
+                raise LookupError("payment not found in tenant")
+            if self.sales.payment_was_corrected(tenant_id, payment_id):
+                raise SalesConflict("payment was already corrected")
+            sale = self.sales.get_sale(tenant_id, original.sale_id)
+            if sale is None:
+                raise LookupError("sale not found in tenant")
+            return self._write_payment(
+                tenant_id,
+                sale,
+                payment_date=payment_date,
+                amount_brl=amount_brl,
+                method=method,
+                recorded_by=recorded_by,
+                source_reference=source_reference,
+                classification=classification,
+                notes=notes,
+                actor=actor,
+                supersedes_id=original.id,
+                correction_reason=reason,
+            )
+
+    def list_payments(
+        self,
+        tenant_id: str,
+        property_id: str,
+        *,
+        sale_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        include_superseded: bool = False,
+        platform_admin: bool = False,
+    ) -> list[PaymentRecord]:
+        start = parse_filter_date(date_from, label="date_from")
+        end = parse_filter_date(date_to, label="date_to")
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            if self.store.get_property(tenant_id, property_id) is None:
+                raise LookupError("property not found in tenant")
+            return self.sales.list_payments(
+                tenant_id,
+                property_id,
+                sale_id=sale_id,
+                date_from=start,
+                date_to=end,
+                include_superseded=include_superseded,
+            )
+
+    def sales_summary(
+        self,
+        tenant_id: str,
+        property_id: str,
+        *,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        as_of: str | None = None,
+        platform_admin: bool = False,
+    ) -> dict[str, Any]:
+        """Receivables for the current sales of a period, as of a date (default today UTC)."""
+        start = parse_filter_date(date_from, label="date_from")
+        end = parse_filter_date(date_to, label="date_to")
+        reference = parse_filter_date(as_of, label="as_of")
+        as_of_date = (
+            datetime.strptime(reference, "%Y-%m-%d").date()
+            if reference is not None
+            else datetime.now(timezone.utc).date()
+        )
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            if self.store.get_property(tenant_id, property_id) is None:
+                raise LookupError("property not found in tenant")
+            return summarize_sales(
+                property_id=property_id,
+                all_sales=self.sales.list_sales(
+                    tenant_id, property_id, include_superseded=True
+                ),
+                payments=self.sales.list_payments(tenant_id, property_id),
+                date_from=start,
+                date_to=end,
+                as_of=as_of_date,
             )
