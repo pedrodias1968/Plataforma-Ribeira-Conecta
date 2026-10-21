@@ -1,6 +1,7 @@
 import { Farm360Api } from "./api/client";
 import { oidcConfigurationFromEnvironment } from "./auth/config";
 import { OidcSession } from "./auth/OidcSession";
+import { Suspense, lazy } from "react";
 import { PilotShell } from "./pages/PilotShell";
 import { apiUrlFromEnvironment } from "./pilotOrigin";
 
@@ -11,6 +12,8 @@ const frontendEnvironment = {
 const tenantId = import.meta.env.VITE_RIBEIRA_TENANT_ID;
 const propertyId = import.meta.env.VITE_RIBEIRA_PROPERTY_ID;
 const token = import.meta.env.VITE_RIBEIRA_ACCESS_TOKEN;
+const siteMode = import.meta.env.VITE_RIBEIRA_SITE_MODE;
+const LandingPage = lazy(() => import("./pages/LandingPage").then((m) => ({ default: m.LandingPage })));
 const authMode = import.meta.env.VITE_RIBEIRA_AUTH_MODE ?? "development";
 
 function workspace(sessionToken: string, configuredApiUrl: string) {
@@ -18,6 +21,10 @@ function workspace(sessionToken: string, configuredApiUrl: string) {
 }
 
 export default function App() {
+  // Build do site público (divulgação): só a landing page, sem API nem login.
+  if (siteMode === "landing") {
+    return <Suspense fallback={<main className="state">Carregando…</main>}><LandingPage /></Suspense>;
+  }
   let apiUrl: string | undefined;
   try {
     apiUrl = apiUrlFromEnvironment(frontendEnvironment);
