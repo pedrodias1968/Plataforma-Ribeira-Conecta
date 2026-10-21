@@ -33,6 +33,13 @@ from .boundary_imports import (
     parse_boundary_import,
     validate_import_filename,
 )
+from .fertilization import (
+    FertilizationConflict,
+    FertilizationRecord,
+    FertilizationRepository,
+    summarize_fertilization,
+    validate_application,
+)
 from .field_context import FieldContextApplication
 from .harvest import (
     HarvestConflict,
@@ -91,6 +98,7 @@ class RibeiraApplication:
         self.business = BusinessApplication(self.store)
         self.soil = SoilRepository(self.store)
         self.harvest = HarvestRepository(self.store)
+        self.fertilization = FertilizationRepository(self.store)
         registry = default_copernicus_registry()
         self.geospatial_provider = geospatial_provider or CopernicusStacAdapter(
             registry
@@ -1784,6 +1792,237 @@ class RibeiraApplication:
                 fields=fields,
                 records=records,
                 discards=discards,
+                date_from=start,
+                date_to=end,
+            )
+
+    # ------------------------------------------------------------------
+    # Fertilization and inputs by field (adubação e insumos por talhão)
+    # ------------------------------------------------------------------
+
+    def register_fertilization_record(
+        self,
+        tenant_id: str,
+        property_id: str,
+        *,
+        field_id: str,
+        application_date: str,
+        product_name: str,
+        product_type: str,
+        quantity: float | None = None,
+        quantity_unit: str | None = None,
+        area_applied_ha: float | None = None,
+        application_method: str | None = None,
+        cost_brl: float | None = None,
+        applied_by: str,
+        recorded_by: str,
+        source_reference: str,
+        classification: DataClassification = DataClassification.MANUAL_CONFIRMED,
+        notes: str | None = None,
+        actor: str = "system",
+        platform_admin: bool = False,
+        supersedes_id: str | None = None,
+        correction_reason: str | None = None,
+    ) -> FertilizationRecord:
+        """Register one application of a product on one field on one date.
+
+        Quantity, area and cost that were not recorded stay unknown (None).
+        Corrections are new records that supersede the old one.
+        """
+        date_value = parse_record_date(application_date, label="application_date")
+        amount, unit, area, cost, cleaned_notes = validate_application(
+            product_type, quantity, quantity_unit, area_applied_ha, cost_brl, notes
+        )
+        validate_classification(classification)
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            self._require_harvest_field(tenant_id, property_id, field_id)
+            item = FertilizationRecord(
+                id=new_id(),
+                tenant_id=tenant_id,
+                property_id=property_id,
+                field_id=field_id,
+                application_date=date_value,
+                product_name=clean_required(product_name, "product_name"),
+                product_type=product_type,
+                quantity=amount,
+                quantity_unit=unit,
+                area_applied_ha=area,
+                application_method=clean_optional(
+                    application_method, "application_method"
+                ),
+                cost_brl=cost,
+                applied_by=clean_required(applied_by, "applied_by"),
+                recorded_by=clean_required(recorded_by, "recorded_by"),
+                source_reference=clean_required(source_reference, "source_reference"),
+                classification=classification,
+                notes=cleaned_notes,
+                supersedes_id=supersedes_id,
+                created_at=now_utc(),
+            )
+            self.fertilization.create(item)
+            self._create_harvest_evidence(
+                tenant_id,
+                evidence_type="FERTILIZATION_RECORD",
+                reference_id=item.id,
+                classification=classification,
+                observed_date=date_value,
+                transformation=(
+                    "fertilization of one field registered from a person's record"
+                    if supersedes_id is None
+                    else "fertilization record correction that supersedes a previous record"
+                ),
+                limitations=[
+                    "absent quantity, area and cost are unknown, not zero",
+                    "a fertilization record does not prove agronomic effect or crop response",
+                ],
+            )
+            self.store.audit(
+                tenant_id,
+                actor,
+                "FERTILIZATION_RECORD_REGISTERED"
+                if supersedes_id is None
+                else "FERTILIZATION_RECORD_CORRECTED",
+                "fertilization_record",
+                item.id,
+                {
+                    "property_id": property_id,
+                    "field_id": field_id,
+                    "application_date": date_value,
+                    "product_name": item.product_name,
+                    "product_type": product_type,
+                    "quantity": amount,
+                    "quantity_unit": unit,
+                    "cost_brl": cost,
+                    "supersedes_id": supersedes_id,
+                    "correction_reason": correction_reason,
+                },
+                new_id(),
+                now_utc(),
+            )
+            return item
+
+    def correct_fertilization_record(
+        self,
+        tenant_id: str,
+        record_id: str,
+        *,
+        correction_reason: str,
+        application_date: str,
+        product_name: str,
+        product_type: str,
+        quantity: float | None = None,
+        quantity_unit: str | None = None,
+        area_applied_ha: float | None = None,
+        application_method: str | None = None,
+        cost_brl: float | None = None,
+        applied_by: str,
+        recorded_by: str,
+        source_reference: str,
+        classification: DataClassification = DataClassification.MANUAL_CONFIRMED,
+        notes: str | None = None,
+        actor: str = "system",
+        platform_admin: bool = False,
+    ) -> FertilizationRecord:
+        """Correct a record by registering a new one that supersedes it.
+
+        The property and field of the original record are kept; the original is
+        never edited or deleted.
+        """
+        reason = clean_required(correction_reason, "correction_reason")
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            original = self.fertilization.get(tenant_id, record_id)
+            if original is None:
+                raise LookupError("fertilization record not found in tenant")
+            if self.fertilization.was_corrected(tenant_id, record_id):
+                raise FertilizationConflict(
+                    "fertilization record was already corrected"
+                )
+            return self.register_fertilization_record(
+                tenant_id,
+                original.property_id,
+                field_id=original.field_id,
+                application_date=application_date,
+                product_name=product_name,
+                product_type=product_type,
+                quantity=quantity,
+                quantity_unit=quantity_unit,
+                area_applied_ha=area_applied_ha,
+                application_method=application_method,
+                cost_brl=cost_brl,
+                applied_by=applied_by,
+                recorded_by=recorded_by,
+                source_reference=source_reference,
+                classification=classification,
+                notes=notes,
+                actor=actor,
+                platform_admin=platform_admin,
+                supersedes_id=original.id,
+                correction_reason=reason,
+            )
+
+    def list_fertilization_records(
+        self,
+        tenant_id: str,
+        property_id: str,
+        *,
+        field_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        include_superseded: bool = False,
+        platform_admin: bool = False,
+    ) -> list[FertilizationRecord]:
+        start = parse_filter_date(date_from, label="date_from")
+        end = parse_filter_date(date_to, label="date_to")
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            if self.store.get_property(tenant_id, property_id) is None:
+                raise LookupError("property not found in tenant")
+            if field_id is not None:
+                self._require_harvest_field(tenant_id, property_id, field_id)
+            return self.fertilization.list(
+                tenant_id,
+                property_id,
+                field_id=field_id,
+                date_from=start,
+                date_to=end,
+                include_superseded=include_superseded,
+            )
+
+    def fertilization_summary(
+        self,
+        tenant_id: str,
+        property_id: str,
+        *,
+        field_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        platform_admin: bool = False,
+    ) -> dict[str, Any]:
+        """Per-field totals of current fertilization records for a period."""
+        start = parse_filter_date(date_from, label="date_from")
+        end = parse_filter_date(date_to, label="date_to")
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            if self.store.get_property(tenant_id, property_id) is None:
+                raise LookupError("property not found in tenant")
+            fields = [
+                (item.id, item.name)
+                for item in self.fields.repository.list_for_property(
+                    tenant_id, property_id
+                )
+                if field_id is None or item.id == field_id
+            ]
+            if field_id is not None and not fields:
+                raise LookupError("field context not found for property")
+            records = self.fertilization.list(
+                tenant_id,
+                property_id,
+                field_id=field_id,
+                date_from=start,
+                date_to=end,
+            )
+            return summarize_fertilization(
+                property_id=property_id,
+                fields=fields,
+                records=records,
                 date_from=start,
                 date_to=end,
             )

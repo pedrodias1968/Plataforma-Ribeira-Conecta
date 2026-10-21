@@ -61,6 +61,7 @@ from .models import (
     to_jsonable,
 )
 from .field_context import FieldBoundaryConflict
+from .fertilization import FertilizationConflict
 from .harvest import HarvestConflict
 from .object_storage import ObjectStorageError
 from .postgres import PostgresStore
@@ -315,6 +316,33 @@ class SoilLabAnalysisRequest(BaseModel):
     sand_percent: float | None = None
     raw_attributes: dict[str, Any] = Field(default_factory=dict)
     classification: DataClassification = DataClassification.MANUAL_CONFIRMED
+
+
+class FertilizationBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    application_date: str = Field(min_length=10, max_length=10)
+    product_name: str = Field(min_length=1, max_length=200)
+    product_type: str = Field(
+        pattern=r"^(MINERAL_FERTILIZER|ORGANIC_FERTILIZER|LIMING|FOLIAR|OTHER)$"
+    )
+    quantity: float | None = Field(default=None, ge=0)
+    quantity_unit: str | None = Field(default=None, pattern=r"^(KG|G|L|ML)$")
+    area_applied_ha: float | None = Field(default=None, gt=0)
+    application_method: str | None = Field(default=None, max_length=200)
+    cost_brl: float | None = Field(default=None, ge=0)
+    applied_by: str = Field(min_length=1, max_length=200)
+    recorded_by: str = Field(min_length=1, max_length=200)
+    source_reference: str = Field(min_length=1, max_length=500)
+    classification: DataClassification = DataClassification.MANUAL_CONFIRMED
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class FertilizationRecordRequest(FertilizationBody):
+    field_id: str = Field(min_length=1, max_length=200)
+
+
+class FertilizationRecordCorrectionRequest(FertilizationBody):
+    correction_reason: str = Field(min_length=1, max_length=1000)
 
 
 class HarvestRecordRequest(BaseModel):
@@ -840,6 +868,13 @@ def create_app(
         return JSONResponse(
             status_code=409,
             content={"error": {"code": "HARVEST_CONFLICT", "message": str(exc)}},
+        )
+
+    @app.exception_handler(FertilizationConflict)
+    async def fertilization_conflict(_: Request, exc: FertilizationConflict):
+        return JSONResponse(
+            status_code=409,
+            content={"error": {"code": "FERTILIZATION_CONFLICT", "message": str(exc)}},
         )
 
     @app.get("/health/live", tags=["health"])
@@ -1881,6 +1916,124 @@ def create_app(
     ):
         authorize(ctx, "harvest:read", tenant_id)
         return application.harvest_summary(
+            tenant_id,
+            property_id,
+            field_id=field_id,
+            date_from=date_from,
+            date_to=date_to,
+            platform_admin=ctx.is_platform_admin,
+        )
+
+    @app.post(
+        "/v1/tenants/{tenant_id}/properties/{property_id}/fertilization-records",
+        status_code=201,
+        tags=["farm-360", "fertilization"],
+    )
+    async def create_fertilization_record(
+        tenant_id: str,
+        property_id: str,
+        payload: FertilizationRecordRequest,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "fertilization:write", tenant_id)
+        item = application.register_fertilization_record(
+            tenant_id,
+            property_id,
+            field_id=payload.field_id,
+            application_date=payload.application_date,
+            product_name=payload.product_name,
+            product_type=payload.product_type,
+            quantity=payload.quantity,
+            quantity_unit=payload.quantity_unit,
+            area_applied_ha=payload.area_applied_ha,
+            application_method=payload.application_method,
+            cost_brl=payload.cost_brl,
+            applied_by=payload.applied_by,
+            recorded_by=payload.recorded_by,
+            source_reference=payload.source_reference,
+            classification=payload.classification,
+            notes=payload.notes,
+            actor=ctx.subject,
+            platform_admin=ctx.is_platform_admin,
+        )
+        return safe_harvest(item)
+
+    @app.get(
+        "/v1/tenants/{tenant_id}/properties/{property_id}/fertilization-records",
+        tags=["farm-360", "fertilization"],
+    )
+    async def list_fertilization_records(
+        tenant_id: str,
+        property_id: str,
+        field_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        include_superseded: bool = False,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "fertilization:read", tenant_id)
+        items = application.list_fertilization_records(
+            tenant_id,
+            property_id,
+            field_id=field_id,
+            date_from=date_from,
+            date_to=date_to,
+            include_superseded=include_superseded,
+            platform_admin=ctx.is_platform_admin,
+        )
+        return {
+            "property_id": property_id,
+            "items": [safe_harvest(item) for item in items],
+        }
+
+    @app.post(
+        "/v1/tenants/{tenant_id}/fertilization-records/{record_id}/corrections",
+        status_code=201,
+        tags=["farm-360", "fertilization"],
+    )
+    async def correct_fertilization_record(
+        tenant_id: str,
+        record_id: str,
+        payload: FertilizationRecordCorrectionRequest,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "fertilization:write", tenant_id)
+        item = application.correct_fertilization_record(
+            tenant_id,
+            record_id,
+            correction_reason=payload.correction_reason,
+            application_date=payload.application_date,
+            product_name=payload.product_name,
+            product_type=payload.product_type,
+            quantity=payload.quantity,
+            quantity_unit=payload.quantity_unit,
+            area_applied_ha=payload.area_applied_ha,
+            application_method=payload.application_method,
+            cost_brl=payload.cost_brl,
+            applied_by=payload.applied_by,
+            recorded_by=payload.recorded_by,
+            source_reference=payload.source_reference,
+            classification=payload.classification,
+            notes=payload.notes,
+            actor=ctx.subject,
+            platform_admin=ctx.is_platform_admin,
+        )
+        return safe_harvest(item)
+
+    @app.get(
+        "/v1/tenants/{tenant_id}/properties/{property_id}/fertilization-summary",
+        tags=["farm-360", "fertilization"],
+    )
+    async def fertilization_summary(
+        tenant_id: str,
+        property_id: str,
+        field_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "fertilization:read", tenant_id)
+        return application.fertilization_summary(
             tenant_id,
             property_id,
             field_id=field_id,
