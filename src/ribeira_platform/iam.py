@@ -183,6 +183,23 @@ for _role in (
 for _role in ("TENANT_ADMIN", "MANAGER", "AGRONOMIST", "TECHNICIAN"):
     ROLE_PERMISSIONS[_role] = ROLE_PERMISSIONS[_role] | frozenset({_SOIL_WRITE})
 
+# Harvest records are operational field data. The OPERATOR (for example the
+# foreman who counts bunches and boxes) can record; read access also covers the
+# ANALYST. VIEWER and COMMERCIAL have no harvest access.
+_HARVEST_READ = "harvest:read"
+_HARVEST_WRITE = "harvest:write"
+for _role in (
+    "ANALYST",
+    "OPERATOR",
+    "TENANT_ADMIN",
+    "MANAGER",
+    "AGRONOMIST",
+    "TECHNICIAN",
+):
+    ROLE_PERMISSIONS[_role] = ROLE_PERMISSIONS[_role] | frozenset({_HARVEST_READ})
+for _role in ("OPERATOR", "TENANT_ADMIN", "MANAGER", "AGRONOMIST", "TECHNICIAN"):
+    ROLE_PERMISSIONS[_role] = ROLE_PERMISSIONS[_role] | frozenset({_HARVEST_WRITE})
+
 
 class AuthenticationError(PermissionError):
     def __init__(

@@ -34,6 +34,20 @@ from .boundary_imports import (
     validate_import_filename,
 )
 from .field_context import FieldContextApplication
+from .harvest import (
+    HarvestConflict,
+    HarvestDiscard,
+    HarvestRecord,
+    HarvestRepository,
+    clean_optional,
+    clean_required,
+    parse_filter_date,
+    parse_record_date,
+    summarize_harvest,
+    validate_classification,
+    validate_harvest_discard,
+    validate_harvest_measures,
+)
 from .soil import (
     SoilLabAnalysis,
     SoilRepository,
@@ -76,6 +90,7 @@ class RibeiraApplication:
         self.fields = FieldContextApplication(self.store)
         self.business = BusinessApplication(self.store)
         self.soil = SoilRepository(self.store)
+        self.harvest = HarvestRepository(self.store)
         registry = default_copernicus_registry()
         self.geospatial_provider = geospatial_provider or CopernicusStacAdapter(
             registry
@@ -1370,3 +1385,405 @@ class RibeiraApplication:
             if self.soil.get_sample_point(tenant_id, sample_point_id) is None:
                 raise LookupError("soil sample point not found in tenant")
             return self.soil.list_lab_analyses(tenant_id, sample_point_id)
+
+    # ------------------------------------------------------------------
+    # Harvest by field (colheita por talhão)
+    # ------------------------------------------------------------------
+
+    def _require_harvest_field(
+        self, tenant_id: str, property_id: str, field_id: str
+    ) -> None:
+        if self.store.get_property(tenant_id, property_id) is None:
+            raise LookupError("property not found in tenant")
+        field_item = self.fields.repository.get(tenant_id, field_id)
+        if field_item is None or field_item.property_id != property_id:
+            raise LookupError("field context not found for property")
+
+    def _create_harvest_evidence(
+        self,
+        tenant_id: str,
+        *,
+        evidence_type: str,
+        reference_id: str,
+        classification: DataClassification,
+        observed_date: str,
+        transformation: str,
+        limitations: list[str],
+    ) -> None:
+        self.store.create_evidence(
+            Evidence(
+                id=new_id(),
+                tenant_id=tenant_id,
+                evidence_type=evidence_type,
+                reference_id=reference_id,
+                classification=classification,
+                source_id=None,
+                observed_at=f"{observed_date}T00:00:00+00:00",
+                transformation=transformation,
+                limitations=limitations,
+            )
+        )
+
+    def register_harvest_record(
+        self,
+        tenant_id: str,
+        property_id: str,
+        *,
+        field_id: str,
+        harvest_date: str,
+        bunches_harvested: int | None = None,
+        boxes_packed: int | None = None,
+        weight_kg: float | None = None,
+        cut_criterion: str | None = None,
+        recorded_by: str,
+        source_reference: str,
+        classification: DataClassification = DataClassification.MANUAL_CONFIRMED,
+        notes: str | None = None,
+        actor: str = "system",
+        platform_admin: bool = False,
+        supersedes_id: str | None = None,
+        correction_reason: str | None = None,
+    ) -> HarvestRecord:
+        """Register what was harvested from one field on one date.
+
+        Only measures that were actually recorded are stored; the others stay
+        unknown (None). Corrections are new records that supersede the old one.
+        """
+        date_value = parse_record_date(harvest_date, label="harvest_date")
+        bunches, boxes, weight = validate_harvest_measures(
+            bunches_harvested, boxes_packed, weight_kg
+        )
+        validate_classification(classification)
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            self._require_harvest_field(tenant_id, property_id, field_id)
+            item = HarvestRecord(
+                id=new_id(),
+                tenant_id=tenant_id,
+                property_id=property_id,
+                field_id=field_id,
+                harvest_date=date_value,
+                bunches_harvested=bunches,
+                boxes_packed=boxes,
+                weight_kg=weight,
+                cut_criterion=clean_optional(cut_criterion, "cut_criterion"),
+                recorded_by=clean_required(recorded_by, "recorded_by"),
+                source_reference=clean_required(source_reference, "source_reference"),
+                classification=classification,
+                notes=clean_optional(notes, "notes"),
+                supersedes_id=supersedes_id,
+                created_at=now_utc(),
+            )
+            self.harvest.create_record(item)
+            self._create_harvest_evidence(
+                tenant_id,
+                evidence_type="HARVEST_RECORD",
+                reference_id=item.id,
+                classification=classification,
+                observed_date=date_value,
+                transformation=(
+                    "harvest of one field registered from a person's or instrument's record"
+                    if supersedes_id is None
+                    else "harvest record correction that supersedes a previous record"
+                ),
+                limitations=[
+                    "only measures that were recorded are present; absent measures are unknown, not zero",
+                    "a harvest record does not prove quality, grade or sale of the fruit",
+                ],
+            )
+            self.store.audit(
+                tenant_id,
+                actor,
+                "HARVEST_RECORD_REGISTERED"
+                if supersedes_id is None
+                else "HARVEST_RECORD_CORRECTED",
+                "harvest_record",
+                item.id,
+                {
+                    "property_id": property_id,
+                    "field_id": field_id,
+                    "harvest_date": date_value,
+                    "bunches_harvested": bunches,
+                    "boxes_packed": boxes,
+                    "weight_kg": weight,
+                    "supersedes_id": supersedes_id,
+                    "correction_reason": correction_reason,
+                },
+                new_id(),
+                now_utc(),
+            )
+            return item
+
+    def correct_harvest_record(
+        self,
+        tenant_id: str,
+        record_id: str,
+        *,
+        correction_reason: str,
+        harvest_date: str,
+        bunches_harvested: int | None = None,
+        boxes_packed: int | None = None,
+        weight_kg: float | None = None,
+        cut_criterion: str | None = None,
+        recorded_by: str,
+        source_reference: str,
+        classification: DataClassification = DataClassification.MANUAL_CONFIRMED,
+        notes: str | None = None,
+        actor: str = "system",
+        platform_admin: bool = False,
+    ) -> HarvestRecord:
+        """Correct a record by registering a new one that supersedes it.
+
+        The property and field of the original record are kept; the original is
+        never edited or deleted.
+        """
+        reason = clean_required(correction_reason, "correction_reason")
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            original = self.harvest.get_record(tenant_id, record_id)
+            if original is None:
+                raise LookupError("harvest record not found in tenant")
+            if self.harvest.record_was_corrected(tenant_id, record_id):
+                raise HarvestConflict("harvest record was already corrected")
+            return self.register_harvest_record(
+                tenant_id,
+                original.property_id,
+                field_id=original.field_id,
+                harvest_date=harvest_date,
+                bunches_harvested=bunches_harvested,
+                boxes_packed=boxes_packed,
+                weight_kg=weight_kg,
+                cut_criterion=cut_criterion,
+                recorded_by=recorded_by,
+                source_reference=source_reference,
+                classification=classification,
+                notes=notes,
+                actor=actor,
+                platform_admin=platform_admin,
+                supersedes_id=original.id,
+                correction_reason=reason,
+            )
+
+    def list_harvest_records(
+        self,
+        tenant_id: str,
+        property_id: str,
+        *,
+        field_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        include_superseded: bool = False,
+        platform_admin: bool = False,
+    ) -> list[HarvestRecord]:
+        start = parse_filter_date(date_from, label="date_from")
+        end = parse_filter_date(date_to, label="date_to")
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            if self.store.get_property(tenant_id, property_id) is None:
+                raise LookupError("property not found in tenant")
+            if field_id is not None:
+                self._require_harvest_field(tenant_id, property_id, field_id)
+            return self.harvest.list_records(
+                tenant_id,
+                property_id,
+                field_id=field_id,
+                date_from=start,
+                date_to=end,
+                include_superseded=include_superseded,
+            )
+
+    def register_harvest_discard(
+        self,
+        tenant_id: str,
+        property_id: str,
+        *,
+        field_id: str,
+        discard_date: str,
+        reason: str,
+        quantity: float,
+        unit: str,
+        recorded_by: str,
+        source_reference: str,
+        classification: DataClassification = DataClassification.MANUAL_CONFIRMED,
+        notes: str | None = None,
+        actor: str = "system",
+        platform_admin: bool = False,
+        supersedes_id: str | None = None,
+        correction_reason: str | None = None,
+    ) -> HarvestDiscard:
+        """Register discarded fruit from one field, with reason and unit."""
+        date_value = parse_record_date(discard_date, label="discard_date")
+        amount, cleaned_notes = validate_harvest_discard(reason, quantity, unit, notes)
+        validate_classification(classification)
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            self._require_harvest_field(tenant_id, property_id, field_id)
+            item = HarvestDiscard(
+                id=new_id(),
+                tenant_id=tenant_id,
+                property_id=property_id,
+                field_id=field_id,
+                discard_date=date_value,
+                reason=reason,
+                quantity=amount,
+                unit=unit,
+                recorded_by=clean_required(recorded_by, "recorded_by"),
+                source_reference=clean_required(source_reference, "source_reference"),
+                classification=classification,
+                notes=cleaned_notes,
+                supersedes_id=supersedes_id,
+                created_at=now_utc(),
+            )
+            self.harvest.create_discard(item)
+            self._create_harvest_evidence(
+                tenant_id,
+                evidence_type="HARVEST_DISCARD",
+                reference_id=item.id,
+                classification=classification,
+                observed_date=date_value,
+                transformation=(
+                    "fruit discard of one field registered with reason and unit"
+                    if supersedes_id is None
+                    else "discard record correction that supersedes a previous record"
+                ),
+                limitations=[
+                    "the quantity is in the stated unit only; units are never converted or combined",
+                    "a discard record does not state a discard percentage",
+                ],
+            )
+            self.store.audit(
+                tenant_id,
+                actor,
+                "HARVEST_DISCARD_REGISTERED"
+                if supersedes_id is None
+                else "HARVEST_DISCARD_CORRECTED",
+                "harvest_discard",
+                item.id,
+                {
+                    "property_id": property_id,
+                    "field_id": field_id,
+                    "discard_date": date_value,
+                    "reason": reason,
+                    "quantity": amount,
+                    "unit": unit,
+                    "supersedes_id": supersedes_id,
+                    "correction_reason": correction_reason,
+                },
+                new_id(),
+                now_utc(),
+            )
+            return item
+
+    def correct_harvest_discard(
+        self,
+        tenant_id: str,
+        discard_id: str,
+        *,
+        correction_reason: str,
+        discard_date: str,
+        reason: str,
+        quantity: float,
+        unit: str,
+        recorded_by: str,
+        source_reference: str,
+        classification: DataClassification = DataClassification.MANUAL_CONFIRMED,
+        notes: str | None = None,
+        actor: str = "system",
+        platform_admin: bool = False,
+    ) -> HarvestDiscard:
+        """Correct a discard by registering a new one that supersedes it."""
+        why = clean_required(correction_reason, "correction_reason")
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            original = self.harvest.get_discard(tenant_id, discard_id)
+            if original is None:
+                raise LookupError("harvest discard not found in tenant")
+            if self.harvest.discard_was_corrected(tenant_id, discard_id):
+                raise HarvestConflict("harvest discard was already corrected")
+            return self.register_harvest_discard(
+                tenant_id,
+                original.property_id,
+                field_id=original.field_id,
+                discard_date=discard_date,
+                reason=reason,
+                quantity=quantity,
+                unit=unit,
+                recorded_by=recorded_by,
+                source_reference=source_reference,
+                classification=classification,
+                notes=notes,
+                actor=actor,
+                platform_admin=platform_admin,
+                supersedes_id=original.id,
+                correction_reason=why,
+            )
+
+    def list_harvest_discards(
+        self,
+        tenant_id: str,
+        property_id: str,
+        *,
+        field_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        include_superseded: bool = False,
+        platform_admin: bool = False,
+    ) -> list[HarvestDiscard]:
+        start = parse_filter_date(date_from, label="date_from")
+        end = parse_filter_date(date_to, label="date_to")
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            if self.store.get_property(tenant_id, property_id) is None:
+                raise LookupError("property not found in tenant")
+            if field_id is not None:
+                self._require_harvest_field(tenant_id, property_id, field_id)
+            return self.harvest.list_discards(
+                tenant_id,
+                property_id,
+                field_id=field_id,
+                date_from=start,
+                date_to=end,
+                include_superseded=include_superseded,
+            )
+
+    def harvest_summary(
+        self,
+        tenant_id: str,
+        property_id: str,
+        *,
+        field_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        platform_admin: bool = False,
+    ) -> dict[str, Any]:
+        """Per-field totals of current harvest and discard records for a period."""
+        start = parse_filter_date(date_from, label="date_from")
+        end = parse_filter_date(date_to, label="date_to")
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            if self.store.get_property(tenant_id, property_id) is None:
+                raise LookupError("property not found in tenant")
+            fields = [
+                (item.id, item.name)
+                for item in self.fields.repository.list_for_property(
+                    tenant_id, property_id
+                )
+                if field_id is None or item.id == field_id
+            ]
+            if field_id is not None and not fields:
+                raise LookupError("field context not found for property")
+            records = self.harvest.list_records(
+                tenant_id,
+                property_id,
+                field_id=field_id,
+                date_from=start,
+                date_to=end,
+            )
+            discards = self.harvest.list_discards(
+                tenant_id,
+                property_id,
+                field_id=field_id,
+                date_from=start,
+                date_to=end,
+            )
+            return summarize_harvest(
+                property_id=property_id,
+                fields=fields,
+                records=records,
+                discards=discards,
+                date_from=start,
+                date_to=end,
+            )

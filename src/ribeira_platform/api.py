@@ -61,6 +61,7 @@ from .models import (
     to_jsonable,
 )
 from .field_context import FieldBoundaryConflict
+from .harvest import HarvestConflict
 from .object_storage import ObjectStorageError
 from .postgres import PostgresStore
 from .raster_tiles import InvalidTile, RasterUnavailable, render_ndvi_tile
@@ -314,6 +315,60 @@ class SoilLabAnalysisRequest(BaseModel):
     sand_percent: float | None = None
     raw_attributes: dict[str, Any] = Field(default_factory=dict)
     classification: DataClassification = DataClassification.MANUAL_CONFIRMED
+
+
+class HarvestRecordRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    field_id: str = Field(min_length=1, max_length=200)
+    harvest_date: str = Field(min_length=10, max_length=10)
+    bunches_harvested: int | None = Field(default=None, ge=0)
+    boxes_packed: int | None = Field(default=None, ge=0)
+    weight_kg: float | None = Field(default=None, ge=0)
+    cut_criterion: str | None = Field(default=None, max_length=200)
+    recorded_by: str = Field(min_length=1, max_length=200)
+    source_reference: str = Field(min_length=1, max_length=500)
+    classification: DataClassification = DataClassification.MANUAL_CONFIRMED
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class HarvestRecordCorrectionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    correction_reason: str = Field(min_length=1, max_length=1000)
+    harvest_date: str = Field(min_length=10, max_length=10)
+    bunches_harvested: int | None = Field(default=None, ge=0)
+    boxes_packed: int | None = Field(default=None, ge=0)
+    weight_kg: float | None = Field(default=None, ge=0)
+    cut_criterion: str | None = Field(default=None, max_length=200)
+    recorded_by: str = Field(min_length=1, max_length=200)
+    source_reference: str = Field(min_length=1, max_length=500)
+    classification: DataClassification = DataClassification.MANUAL_CONFIRMED
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class HarvestDiscardRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    field_id: str = Field(min_length=1, max_length=200)
+    discard_date: str = Field(min_length=10, max_length=10)
+    reason: str = Field(pattern=r"^(STAIN|MECHANICAL_DAMAGE|CALIBER|OTHER)$")
+    quantity: float = Field(ge=0)
+    unit: str = Field(pattern=r"^(BOXES|KG|BUNCHES)$")
+    recorded_by: str = Field(min_length=1, max_length=200)
+    source_reference: str = Field(min_length=1, max_length=500)
+    classification: DataClassification = DataClassification.MANUAL_CONFIRMED
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class HarvestDiscardCorrectionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    correction_reason: str = Field(min_length=1, max_length=1000)
+    discard_date: str = Field(min_length=10, max_length=10)
+    reason: str = Field(pattern=r"^(STAIN|MECHANICAL_DAMAGE|CALIBER|OTHER)$")
+    quantity: float = Field(ge=0)
+    unit: str = Field(pattern=r"^(BOXES|KG|BUNCHES)$")
+    recorded_by: str = Field(min_length=1, max_length=200)
+    source_reference: str = Field(min_length=1, max_length=500)
+    classification: DataClassification = DataClassification.MANUAL_CONFIRMED
+    notes: str | None = Field(default=None, max_length=2000)
 
 
 class CustomerRequest(BaseModel):
@@ -780,6 +835,13 @@ def create_app(
             },
         )
 
+    @app.exception_handler(HarvestConflict)
+    async def harvest_conflict(_: Request, exc: HarvestConflict):
+        return JSONResponse(
+            status_code=409,
+            content={"error": {"code": "HARVEST_CONFLICT", "message": str(exc)}},
+        )
+
     @app.get("/health/live", tags=["health"])
     async def live():
         return {"status": "ok", "service": "ribeira-platform"}
@@ -1028,6 +1090,13 @@ def create_app(
 
     def safe_soil_lab_analysis(item: Any) -> dict[str, Any]:
         """Expose laboratory soil analysis report with tenant evidence reference."""
+        payload = to_jsonable(item)
+        evidence = application.store.evidence_for_reference(item.tenant_id, item.id)
+        payload["evidence_id"] = evidence.id if evidence is not None else None
+        return payload
+
+    def safe_harvest(item: Any) -> dict[str, Any]:
+        """Expose a harvest or discard record with its tenant evidence reference."""
         payload = to_jsonable(item)
         evidence = application.store.evidence_for_reference(item.tenant_id, item.id)
         payload["evidence_id"] = evidence.id if evidence is not None else None
@@ -1623,6 +1692,202 @@ def create_app(
             "sample_point_id": sample_id,
             "items": [safe_soil_lab_analysis(item) for item in items],
         }
+
+    @app.post(
+        "/v1/tenants/{tenant_id}/properties/{property_id}/harvest-records",
+        status_code=201,
+        tags=["farm-360", "harvest"],
+    )
+    async def create_harvest_record(
+        tenant_id: str,
+        property_id: str,
+        payload: HarvestRecordRequest,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "harvest:write", tenant_id)
+        item = application.register_harvest_record(
+            tenant_id,
+            property_id,
+            field_id=payload.field_id,
+            harvest_date=payload.harvest_date,
+            bunches_harvested=payload.bunches_harvested,
+            boxes_packed=payload.boxes_packed,
+            weight_kg=payload.weight_kg,
+            cut_criterion=payload.cut_criterion,
+            recorded_by=payload.recorded_by,
+            source_reference=payload.source_reference,
+            classification=payload.classification,
+            notes=payload.notes,
+            actor=ctx.subject,
+            platform_admin=ctx.is_platform_admin,
+        )
+        return safe_harvest(item)
+
+    @app.get(
+        "/v1/tenants/{tenant_id}/properties/{property_id}/harvest-records",
+        tags=["farm-360", "harvest"],
+    )
+    async def list_harvest_records(
+        tenant_id: str,
+        property_id: str,
+        field_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        include_superseded: bool = False,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "harvest:read", tenant_id)
+        items = application.list_harvest_records(
+            tenant_id,
+            property_id,
+            field_id=field_id,
+            date_from=date_from,
+            date_to=date_to,
+            include_superseded=include_superseded,
+            platform_admin=ctx.is_platform_admin,
+        )
+        return {
+            "property_id": property_id,
+            "items": [safe_harvest(item) for item in items],
+        }
+
+    @app.post(
+        "/v1/tenants/{tenant_id}/harvest-records/{record_id}/corrections",
+        status_code=201,
+        tags=["farm-360", "harvest"],
+    )
+    async def correct_harvest_record(
+        tenant_id: str,
+        record_id: str,
+        payload: HarvestRecordCorrectionRequest,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "harvest:write", tenant_id)
+        item = application.correct_harvest_record(
+            tenant_id,
+            record_id,
+            correction_reason=payload.correction_reason,
+            harvest_date=payload.harvest_date,
+            bunches_harvested=payload.bunches_harvested,
+            boxes_packed=payload.boxes_packed,
+            weight_kg=payload.weight_kg,
+            cut_criterion=payload.cut_criterion,
+            recorded_by=payload.recorded_by,
+            source_reference=payload.source_reference,
+            classification=payload.classification,
+            notes=payload.notes,
+            actor=ctx.subject,
+            platform_admin=ctx.is_platform_admin,
+        )
+        return safe_harvest(item)
+
+    @app.post(
+        "/v1/tenants/{tenant_id}/properties/{property_id}/harvest-discards",
+        status_code=201,
+        tags=["farm-360", "harvest"],
+    )
+    async def create_harvest_discard(
+        tenant_id: str,
+        property_id: str,
+        payload: HarvestDiscardRequest,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "harvest:write", tenant_id)
+        item = application.register_harvest_discard(
+            tenant_id,
+            property_id,
+            field_id=payload.field_id,
+            discard_date=payload.discard_date,
+            reason=payload.reason,
+            quantity=payload.quantity,
+            unit=payload.unit,
+            recorded_by=payload.recorded_by,
+            source_reference=payload.source_reference,
+            classification=payload.classification,
+            notes=payload.notes,
+            actor=ctx.subject,
+            platform_admin=ctx.is_platform_admin,
+        )
+        return safe_harvest(item)
+
+    @app.get(
+        "/v1/tenants/{tenant_id}/properties/{property_id}/harvest-discards",
+        tags=["farm-360", "harvest"],
+    )
+    async def list_harvest_discards(
+        tenant_id: str,
+        property_id: str,
+        field_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        include_superseded: bool = False,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "harvest:read", tenant_id)
+        items = application.list_harvest_discards(
+            tenant_id,
+            property_id,
+            field_id=field_id,
+            date_from=date_from,
+            date_to=date_to,
+            include_superseded=include_superseded,
+            platform_admin=ctx.is_platform_admin,
+        )
+        return {
+            "property_id": property_id,
+            "items": [safe_harvest(item) for item in items],
+        }
+
+    @app.post(
+        "/v1/tenants/{tenant_id}/harvest-discards/{discard_id}/corrections",
+        status_code=201,
+        tags=["farm-360", "harvest"],
+    )
+    async def correct_harvest_discard(
+        tenant_id: str,
+        discard_id: str,
+        payload: HarvestDiscardCorrectionRequest,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "harvest:write", tenant_id)
+        item = application.correct_harvest_discard(
+            tenant_id,
+            discard_id,
+            correction_reason=payload.correction_reason,
+            discard_date=payload.discard_date,
+            reason=payload.reason,
+            quantity=payload.quantity,
+            unit=payload.unit,
+            recorded_by=payload.recorded_by,
+            source_reference=payload.source_reference,
+            classification=payload.classification,
+            notes=payload.notes,
+            actor=ctx.subject,
+            platform_admin=ctx.is_platform_admin,
+        )
+        return safe_harvest(item)
+
+    @app.get(
+        "/v1/tenants/{tenant_id}/properties/{property_id}/harvest-summary",
+        tags=["farm-360", "harvest"],
+    )
+    async def harvest_summary(
+        tenant_id: str,
+        property_id: str,
+        field_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "harvest:read", tenant_id)
+        return application.harvest_summary(
+            tenant_id,
+            property_id,
+            field_id=field_id,
+            date_from=date_from,
+            date_to=date_to,
+            platform_admin=ctx.is_platform_admin,
+        )
 
     @app.post("/v1/tenants/{tenant_id}/sources", status_code=201, tags=["sources"])
     async def create_source(
