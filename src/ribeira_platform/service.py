@@ -33,6 +33,13 @@ from .boundary_imports import (
     parse_boundary_import,
     validate_import_filename,
 )
+from .costs import (
+    CostConflict,
+    CostEntry,
+    CostRepository,
+    summarize_costs,
+    validate_cost,
+)
 from .fertilization import (
     FertilizationConflict,
     FertilizationRecord,
@@ -99,6 +106,7 @@ class RibeiraApplication:
         self.soil = SoilRepository(self.store)
         self.harvest = HarvestRepository(self.store)
         self.fertilization = FertilizationRepository(self.store)
+        self.costs = CostRepository(self.store)
         registry = default_copernicus_registry()
         self.geospatial_provider = geospatial_provider or CopernicusStacAdapter(
             registry
@@ -2023,6 +2031,222 @@ class RibeiraApplication:
                 property_id=property_id,
                 fields=fields,
                 records=records,
+                date_from=start,
+                date_to=end,
+            )
+
+    # ------------------------------------------------------------------
+    # Costs by field (custos por talhão)
+    # ------------------------------------------------------------------
+
+    def register_cost_entry(
+        self,
+        tenant_id: str,
+        property_id: str,
+        *,
+        field_id: str | None = None,
+        entry_date: str,
+        category: str,
+        description: str,
+        amount_brl: float,
+        recorded_by: str,
+        source_reference: str,
+        classification: DataClassification = DataClassification.MANUAL_CONFIRMED,
+        notes: str | None = None,
+        actor: str = "system",
+        platform_admin: bool = False,
+        supersedes_id: str | None = None,
+        correction_reason: str | None = None,
+    ) -> CostEntry:
+        """Register one cost, allocated to a field or kept property-wide.
+
+        Fertilizer costs belong to the fertilization module and are refused here.
+        """
+        date_value = parse_record_date(entry_date, label="entry_date")
+        amount, cleaned_notes = validate_cost(category, amount_brl, notes)
+        validate_classification(classification)
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            if field_id is not None:
+                self._require_harvest_field(tenant_id, property_id, field_id)
+            elif self.store.get_property(tenant_id, property_id) is None:
+                raise LookupError("property not found in tenant")
+            item = CostEntry(
+                id=new_id(),
+                tenant_id=tenant_id,
+                property_id=property_id,
+                field_id=field_id,
+                entry_date=date_value,
+                category=category,
+                description=clean_required(description, "description"),
+                amount_brl=amount,
+                recorded_by=clean_required(recorded_by, "recorded_by"),
+                source_reference=clean_required(source_reference, "source_reference"),
+                classification=classification,
+                notes=cleaned_notes,
+                supersedes_id=supersedes_id,
+                created_at=now_utc(),
+            )
+            self.costs.create(item)
+            self._create_harvest_evidence(
+                tenant_id,
+                evidence_type="COST_ENTRY",
+                reference_id=item.id,
+                classification=classification,
+                observed_date=date_value,
+                transformation=(
+                    "cost registered from a person's record"
+                    if supersedes_id is None
+                    else "cost correction that supersedes a previous entry"
+                ),
+                limitations=[
+                    "a cost entry records an amount, not a payment or an invoice",
+                    "a property-wide cost is not attributed to any field",
+                ],
+            )
+            self.store.audit(
+                tenant_id,
+                actor,
+                "COST_ENTRY_REGISTERED"
+                if supersedes_id is None
+                else "COST_ENTRY_CORRECTED",
+                "cost_entry",
+                item.id,
+                {
+                    "property_id": property_id,
+                    "field_id": field_id,
+                    "entry_date": date_value,
+                    "category": category,
+                    "amount_brl": amount,
+                    "supersedes_id": supersedes_id,
+                    "correction_reason": correction_reason,
+                },
+                new_id(),
+                now_utc(),
+            )
+            return item
+
+    def correct_cost_entry(
+        self,
+        tenant_id: str,
+        entry_id: str,
+        *,
+        correction_reason: str,
+        entry_date: str,
+        category: str,
+        description: str,
+        amount_brl: float,
+        recorded_by: str,
+        source_reference: str,
+        classification: DataClassification = DataClassification.MANUAL_CONFIRMED,
+        notes: str | None = None,
+        actor: str = "system",
+        platform_admin: bool = False,
+    ) -> CostEntry:
+        """Correct an entry by registering a new one that supersedes it.
+
+        The property and field (or lack of field) of the original are kept.
+        """
+        reason = clean_required(correction_reason, "correction_reason")
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            original = self.costs.get(tenant_id, entry_id)
+            if original is None:
+                raise LookupError("cost entry not found in tenant")
+            if self.costs.was_corrected(tenant_id, entry_id):
+                raise CostConflict("cost entry was already corrected")
+            return self.register_cost_entry(
+                tenant_id,
+                original.property_id,
+                field_id=original.field_id,
+                entry_date=entry_date,
+                category=category,
+                description=description,
+                amount_brl=amount_brl,
+                recorded_by=recorded_by,
+                source_reference=source_reference,
+                classification=classification,
+                notes=notes,
+                actor=actor,
+                platform_admin=platform_admin,
+                supersedes_id=original.id,
+                correction_reason=reason,
+            )
+
+    def list_cost_entries(
+        self,
+        tenant_id: str,
+        property_id: str,
+        *,
+        field_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        include_superseded: bool = False,
+        platform_admin: bool = False,
+    ) -> list[CostEntry]:
+        start = parse_filter_date(date_from, label="date_from")
+        end = parse_filter_date(date_to, label="date_to")
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            if self.store.get_property(tenant_id, property_id) is None:
+                raise LookupError("property not found in tenant")
+            if field_id is not None:
+                self._require_harvest_field(tenant_id, property_id, field_id)
+            return self.costs.list(
+                tenant_id,
+                property_id,
+                field_id=field_id,
+                date_from=start,
+                date_to=end,
+                include_superseded=include_superseded,
+            )
+
+    def cost_summary(
+        self,
+        tenant_id: str,
+        property_id: str,
+        *,
+        field_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        platform_admin: bool = False,
+    ) -> dict[str, Any]:
+        """Per-field cost, harvest weight and cost per kg when computable."""
+        start = parse_filter_date(date_from, label="date_from")
+        end = parse_filter_date(date_to, label="date_to")
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            if self.store.get_property(tenant_id, property_id) is None:
+                raise LookupError("property not found in tenant")
+            fields = [
+                (item.id, item.name)
+                for item in self.fields.repository.list_for_property(
+                    tenant_id, property_id
+                )
+                if field_id is None or item.id == field_id
+            ]
+            if field_id is not None and not fields:
+                raise LookupError("field context not found for property")
+            return summarize_costs(
+                property_id=property_id,
+                fields=fields,
+                entries=self.costs.list(
+                    tenant_id,
+                    property_id,
+                    field_id=field_id,
+                    date_from=start,
+                    date_to=end,
+                ),
+                fertilization=self.fertilization.list(
+                    tenant_id,
+                    property_id,
+                    field_id=field_id,
+                    date_from=start,
+                    date_to=end,
+                ),
+                harvest=self.harvest.list_records(
+                    tenant_id,
+                    property_id,
+                    field_id=field_id,
+                    date_from=start,
+                    date_to=end,
+                ),
                 date_from=start,
                 date_to=end,
             )

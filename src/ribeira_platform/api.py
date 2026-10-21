@@ -61,6 +61,7 @@ from .models import (
     to_jsonable,
 )
 from .field_context import FieldBoundaryConflict
+from .costs import CostConflict
 from .fertilization import FertilizationConflict
 from .harvest import HarvestConflict
 from .object_storage import ObjectStorageError
@@ -316,6 +317,28 @@ class SoilLabAnalysisRequest(BaseModel):
     sand_percent: float | None = None
     raw_attributes: dict[str, Any] = Field(default_factory=dict)
     classification: DataClassification = DataClassification.MANUAL_CONFIRMED
+
+
+class CostEntryBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    entry_date: str = Field(min_length=10, max_length=10)
+    category: str = Field(
+        pattern=r"^(LABOR|PESTICIDE|FUEL|MAINTENANCE|PACKAGING|TRANSPORT|OTHER)$"
+    )
+    description: str = Field(min_length=1, max_length=500)
+    amount_brl: float = Field(ge=0)
+    recorded_by: str = Field(min_length=1, max_length=200)
+    source_reference: str = Field(min_length=1, max_length=500)
+    classification: DataClassification = DataClassification.MANUAL_CONFIRMED
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class CostEntryRequest(CostEntryBody):
+    field_id: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class CostEntryCorrectionRequest(CostEntryBody):
+    correction_reason: str = Field(min_length=1, max_length=1000)
 
 
 class FertilizationBody(BaseModel):
@@ -875,6 +898,13 @@ def create_app(
         return JSONResponse(
             status_code=409,
             content={"error": {"code": "FERTILIZATION_CONFLICT", "message": str(exc)}},
+        )
+
+    @app.exception_handler(CostConflict)
+    async def cost_conflict(_: Request, exc: CostConflict):
+        return JSONResponse(
+            status_code=409,
+            content={"error": {"code": "COST_CONFLICT", "message": str(exc)}},
         )
 
     @app.get("/health/live", tags=["health"])
@@ -2034,6 +2064,114 @@ def create_app(
     ):
         authorize(ctx, "fertilization:read", tenant_id)
         return application.fertilization_summary(
+            tenant_id,
+            property_id,
+            field_id=field_id,
+            date_from=date_from,
+            date_to=date_to,
+            platform_admin=ctx.is_platform_admin,
+        )
+
+    @app.post(
+        "/v1/tenants/{tenant_id}/properties/{property_id}/cost-entries",
+        status_code=201,
+        tags=["farm-360", "costs"],
+    )
+    async def create_cost_entry(
+        tenant_id: str,
+        property_id: str,
+        payload: CostEntryRequest,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "cost:write", tenant_id)
+        item = application.register_cost_entry(
+            tenant_id,
+            property_id,
+            field_id=payload.field_id,
+            entry_date=payload.entry_date,
+            category=payload.category,
+            description=payload.description,
+            amount_brl=payload.amount_brl,
+            recorded_by=payload.recorded_by,
+            source_reference=payload.source_reference,
+            classification=payload.classification,
+            notes=payload.notes,
+            actor=ctx.subject,
+            platform_admin=ctx.is_platform_admin,
+        )
+        return safe_harvest(item)
+
+    @app.get(
+        "/v1/tenants/{tenant_id}/properties/{property_id}/cost-entries",
+        tags=["farm-360", "costs"],
+    )
+    async def list_cost_entries(
+        tenant_id: str,
+        property_id: str,
+        field_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        include_superseded: bool = False,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "cost:read", tenant_id)
+        items = application.list_cost_entries(
+            tenant_id,
+            property_id,
+            field_id=field_id,
+            date_from=date_from,
+            date_to=date_to,
+            include_superseded=include_superseded,
+            platform_admin=ctx.is_platform_admin,
+        )
+        return {
+            "property_id": property_id,
+            "items": [safe_harvest(item) for item in items],
+        }
+
+    @app.post(
+        "/v1/tenants/{tenant_id}/cost-entries/{entry_id}/corrections",
+        status_code=201,
+        tags=["farm-360", "costs"],
+    )
+    async def correct_cost_entry(
+        tenant_id: str,
+        entry_id: str,
+        payload: CostEntryCorrectionRequest,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "cost:write", tenant_id)
+        item = application.correct_cost_entry(
+            tenant_id,
+            entry_id,
+            correction_reason=payload.correction_reason,
+            entry_date=payload.entry_date,
+            category=payload.category,
+            description=payload.description,
+            amount_brl=payload.amount_brl,
+            recorded_by=payload.recorded_by,
+            source_reference=payload.source_reference,
+            classification=payload.classification,
+            notes=payload.notes,
+            actor=ctx.subject,
+            platform_admin=ctx.is_platform_admin,
+        )
+        return safe_harvest(item)
+
+    @app.get(
+        "/v1/tenants/{tenant_id}/properties/{property_id}/cost-summary",
+        tags=["farm-360", "costs"],
+    )
+    async def cost_summary(
+        tenant_id: str,
+        property_id: str,
+        field_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "cost:read", tenant_id)
+        return application.cost_summary(
             tenant_id,
             property_id,
             field_id=field_id,
