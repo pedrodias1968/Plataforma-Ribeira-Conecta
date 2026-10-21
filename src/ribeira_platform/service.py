@@ -73,6 +73,13 @@ from .sales import (
     validate_payment_amount,
     validate_sale,
 )
+from .stock import (
+    StockConflict,
+    StockMovement,
+    StockRepository,
+    summarize_stock,
+    validate_movement,
+)
 from .soil import (
     SoilLabAnalysis,
     SoilRepository,
@@ -119,6 +126,7 @@ class RibeiraApplication:
         self.fertilization = FertilizationRepository(self.store)
         self.costs = CostRepository(self.store)
         self.sales = SalesRepository(self.store)
+        self.stock = StockRepository(self.store)
         registry = default_copernicus_registry()
         self.geospatial_provider = geospatial_provider or CopernicusStacAdapter(
             registry
@@ -2694,3 +2702,181 @@ class RibeiraApplication:
                 "Valor sem registro é desconhecido, não zero.",
             ],
         }
+
+    def register_stock_movement(
+        self,
+        tenant_id: str,
+        property_id: str,
+        *,
+        movement_date: str,
+        movement_type: str,
+        item_name: str,
+        unit: str,
+        quantity: float,
+        counterparty: str | None = None,
+        recorded_by: str,
+        source_reference: str,
+        classification: DataClassification = DataClassification.MANUAL_CONFIRMED,
+        notes: str | None = None,
+        actor: str = "system",
+        platform_admin: bool = False,
+        supersedes_id: str | None = None,
+        correction_reason: str | None = None,
+    ) -> StockMovement:
+        """Register an input entry (IN) or exit (OUT). Stock is never adjusted silently."""
+        date_value = parse_record_date(movement_date, label="movement_date")
+        qty, party = validate_movement(movement_type, unit, quantity, counterparty)
+        validate_classification(classification)
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            if self.store.get_property(tenant_id, property_id) is None:
+                raise LookupError("property not found in tenant")
+            item = StockMovement(
+                id=new_id(),
+                tenant_id=tenant_id,
+                property_id=property_id,
+                movement_date=date_value,
+                movement_type=movement_type,
+                item_name=clean_required(item_name, "item_name"),
+                unit=unit,
+                quantity=qty,
+                counterparty=party,
+                recorded_by=clean_required(recorded_by, "recorded_by"),
+                source_reference=clean_required(source_reference, "source_reference"),
+                classification=classification,
+                notes=clean_optional(notes, "notes"),
+                supersedes_id=supersedes_id,
+                created_at=now_utc(),
+            )
+            self.stock.create(item)
+            self._create_harvest_evidence(
+                tenant_id,
+                evidence_type="STOCK_MOVEMENT",
+                reference_id=item.id,
+                classification=classification,
+                observed_date=date_value,
+                transformation=(
+                    "stock movement registered from a person's record"
+                    if supersedes_id is None
+                    else "stock correction that supersedes a previous movement"
+                ),
+                limitations=[
+                    "the balance is entries minus registered exits; unregistered opening stock is unknown",
+                    "a stock movement does not prove the physical count",
+                    "fertilization records do not move stock automatically",
+                ],
+            )
+            self.store.audit(
+                tenant_id,
+                actor,
+                "STOCK_MOVEMENT_REGISTERED"
+                if supersedes_id is None
+                else "STOCK_MOVEMENT_CORRECTED",
+                "stock_movement",
+                item.id,
+                {
+                    "property_id": property_id,
+                    "movement_date": date_value,
+                    "movement_type": movement_type,
+                    "item_name": item.item_name,
+                    "unit": unit,
+                    "quantity": qty,
+                    "supersedes_id": supersedes_id,
+                    "correction_reason": correction_reason,
+                },
+                new_id(),
+                now_utc(),
+            )
+            return item
+
+    def correct_stock_movement(
+        self,
+        tenant_id: str,
+        movement_id: str,
+        *,
+        correction_reason: str,
+        movement_date: str,
+        movement_type: str,
+        item_name: str,
+        unit: str,
+        quantity: float,
+        counterparty: str | None = None,
+        recorded_by: str,
+        source_reference: str,
+        classification: DataClassification = DataClassification.MANUAL_CONFIRMED,
+        notes: str | None = None,
+        actor: str = "system",
+        platform_admin: bool = False,
+    ) -> StockMovement:
+        """Correct a movement by registering a new one that supersedes it."""
+        reason = clean_required(correction_reason, "correction_reason")
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            original = self.stock.get(tenant_id, movement_id)
+            if original is None:
+                raise LookupError("stock movement not found in tenant")
+            if self.stock.was_corrected(tenant_id, movement_id):
+                raise StockConflict("stock movement was already corrected")
+            return self.register_stock_movement(
+                tenant_id,
+                original.property_id,
+                movement_date=movement_date,
+                movement_type=movement_type,
+                item_name=item_name,
+                unit=unit,
+                quantity=quantity,
+                counterparty=counterparty,
+                recorded_by=recorded_by,
+                source_reference=source_reference,
+                classification=classification,
+                notes=notes,
+                actor=actor,
+                platform_admin=platform_admin,
+                supersedes_id=original.id,
+                correction_reason=reason,
+            )
+
+    def list_stock_movements(
+        self,
+        tenant_id: str,
+        property_id: str,
+        *,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        include_superseded: bool = False,
+        platform_admin: bool = False,
+    ) -> list[StockMovement]:
+        start = parse_filter_date(date_from, label="date_from")
+        end = parse_filter_date(date_to, label="date_to")
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            if self.store.get_property(tenant_id, property_id) is None:
+                raise LookupError("property not found in tenant")
+            return self.stock.list(
+                tenant_id,
+                property_id,
+                date_from=start,
+                date_to=end,
+                include_superseded=include_superseded,
+            )
+
+    def stock_summary(
+        self,
+        tenant_id: str,
+        property_id: str,
+        *,
+        as_of: str | None = None,
+        platform_admin: bool = False,
+    ) -> dict[str, Any]:
+        """Balance per item and unit up to a date (default today UTC)."""
+        reference = parse_filter_date(as_of, label="as_of")
+        as_of_date = (
+            datetime.strptime(reference, "%Y-%m-%d").date()
+            if reference is not None
+            else datetime.now(timezone.utc).date()
+        )
+        with self.store.tenant_transaction(tenant_id, platform_admin):
+            if self.store.get_property(tenant_id, property_id) is None:
+                raise LookupError("property not found in tenant")
+            return summarize_stock(
+                property_id,
+                self.stock.list(tenant_id, property_id),
+                as_of=as_of_date,
+            )
