@@ -2,28 +2,28 @@ import { useState, useEffect } from "react";
 import type { Farm360Api } from "../../api/client";
 import type { ValeDoRibeiraSituation } from "../../types/farm360";
 
+type HydrologySummary = ValeDoRibeiraSituation["rainfall_summary"] | ValeDoRibeiraSituation["river_summary"];
+
 export function HydrologyPanel({ api, tenantId }: { api: Farm360Api; tenantId: string }) {
   const [situation, setSituation] = useState<ValeDoRibeiraSituation | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const loadSituation = async () => {
-      try {
-        setLoading(true);
-        const result = await api.get<ValeDoRibeiraSituation>(
-          `/v1/tenants/${encodeURIComponent(tenantId)}/vale-do-ribeira/situation`,
-        );
-        setSituation(result);
-        setError(null);
-      } catch {
-        setError("Falha ao carregar situação hidrológica");
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadSituation();
-  }, [api, tenantId]);
+   useEffect(() => {
+     const loadSituation = async () => {
+       try {
+         setLoading(true);
+         const result = await api.valeDoRibeiraSituation(tenantId);
+         setSituation(result);
+         setError(null);
+       } catch {
+         setError("Falha ao carregar situação hidrológica");
+       } finally {
+         setLoading(false);
+       }
+     };
+     loadSituation();
+   }, [api, tenantId]);
 
   if (loading) {
     return <section className="hydrology-panel"><p>Carregando situação hidrológica...</p></section>;

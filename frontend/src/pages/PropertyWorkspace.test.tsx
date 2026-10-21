@@ -20,7 +20,7 @@ const property = (id: string, name: string): PortfolioProperty => ({
   boundary_source: null, area_hectares: null, classification: "UNKNOWN",
   created_at: "2026-01-01T00:00:00Z", updated_at: null, data_status: "UNKNOWN",
   latest_scene_at: null, latest_ndvi_at: null, latest_ndvi_id: null,
-  provenance_available: false, jobs: {},
+  provenance_available: false, jobs: {}, asset_count: 0, risk_count: null,
 });
 
 function apiFor(items: PortfolioProperty[] | Promise<PortfolioProperty[]>) {

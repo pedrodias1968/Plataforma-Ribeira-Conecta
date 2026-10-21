@@ -22,6 +22,7 @@ import type {
   TemporalDeltaEvaluation,
   TimelineItem,
   FloodExposureAssessment,
+  ValeDoRibeiraSituation,
 } from "../types/farm360";
 
 export class ApiError extends Error {
