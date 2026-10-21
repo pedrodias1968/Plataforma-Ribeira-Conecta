@@ -36,7 +36,7 @@ Permissões `sale:read` (ANALYST, TENANT_ADMIN, MANAGER) e `sale:write` (TENANT_
 
 ## Limites conhecidos
 
-- Correção só pela API; o painel da Farm360 registra vendas e recebimentos, mas não corrige.
+- Correção pelo painel “Corrigir um registro” da Farm360 ou pela API; o painel “Corrigir um registro” da Farm360 corrige vendas e recebimentos.
 - Sem vínculo com talhão: a venda é do sítio. Sem emissão de nota nem conciliação bancária.
 - Preço do dia é registrado por venda; não há tabela de cotações.
 
