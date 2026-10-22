@@ -1,0 +1,482 @@
+/* Cena rolável do ecossistema. A câmera (.world) acompanha o capítulo ativo;
+   mouse e scroll mexem só nas camadas de profundidade (.layer) via --px, --py, --sp.
+   Movimento curto, só transform/opacity, desligado com prefers-reduced-motion. */
+.journey {
+  --cam-ease: cubic-bezier(0.65, 0, 0.35, 1);
+  position: relative;
+}
+
+.journey-stage {
+  position: sticky;
+  top: 64px;
+  height: calc(100svh - 64px);
+  overflow: hidden;
+  background: #0b110d;
+}
+
+.scene {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.world {
+  transform-origin: 0 0;
+  transition: transform 1000ms var(--cam-ease);
+}
+
+/* Camadas de profundidade: quanto mais perto, mais se mexem. */
+.layer {
+  transition: transform 450ms var(--ease-out);
+}
+
+.layer-far {
+  transform: translate(calc(var(--px, 0) * -6px), calc(var(--py, 0) * -3px + (var(--sp, 0) - 0.5) * 10px));
+}
+
+.layer-mid {
+  transform: translate(calc(var(--px, 0) * -14px), calc(var(--py, 0) * -7px + (var(--sp, 0) - 0.5) * 24px));
+}
+
+.layer-near {
+  transform: translate(calc(var(--px, 0) * -26px), calc(var(--py, 0) * -12px + (var(--sp, 0) - 0.5) * 44px));
+}
+
+.layer-front {
+  transform: translate(calc(var(--px, 0) * -60px), calc(var(--py, 0) * -24px + (var(--sp, 0) - 0.5) * 90px));
+}
+
+.river-flow {
+  stroke-dasharray: 28 72;
+  animation: scene-flow 14s linear infinite;
+}
+
+.river-hi {
+  opacity: 0;
+  transition: opacity 420ms var(--ease-out);
+}
+
+.river-hi.is-on {
+  opacity: 0.9;
+}
+
+.plant {
+  transform-origin: 0 0;
+  animation: scene-sway 5.5s ease-in-out infinite alternate;
+}
+
+/* Pontos da cena (conectividade, câmeras, gestão, território) */
+.spot {
+  cursor: pointer;
+  outline: none;
+  transition: opacity 260ms var(--ease-out);
+}
+
+.spot.is-dim {
+  opacity: 0.38;
+}
+
+.spot:focus-visible {
+  outline: 2px solid var(--banana);
+  outline-offset: 6px;
+}
+
+.scene-label {
+  fill: var(--bone);
+  font: 500 15px var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  paint-order: stroke;
+  stroke: #0b110d;
+  stroke-width: 5px;
+  opacity: 0.72;
+  transition: opacity 260ms var(--ease-out), fill 260ms var(--ease-out);
+  pointer-events: none;
+}
+
+.spot.is-on .scene-label {
+  fill: var(--banana);
+  opacity: 1;
+}
+
+.scene-tag {
+  fill: var(--bone);
+  font: 500 15px var(--font-mono);
+  pointer-events: none;
+}
+
+/* Conectividade */
+.ring {
+  fill: none;
+  stroke: var(--banana);
+  stroke-width: 2;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(0.1);
+}
+
+.rings .ring:first-child {
+  opacity: 0.22;
+  transform: scale(0.3);
+}
+
+.spot.is-on .ring {
+  animation: scene-ring 3.3s var(--ease-out) infinite;
+}
+
+.link {
+  opacity: 0.35;
+  transition: opacity 260ms var(--ease-out);
+}
+
+.spot.is-on .link {
+  opacity: 1;
+  animation: scene-dash 1.4s linear infinite;
+}
+
+.wifi {
+  opacity: 0.4;
+}
+
+.spot.is-on .wifi {
+  animation: scene-blink 1.6s ease-in-out infinite;
+}
+
+/* Câmera de segurança */
+.cam {
+  transform-origin: 1230px 474px;
+}
+
+.fov {
+  opacity: 0.4;
+  transition: opacity 260ms var(--ease-out);
+}
+
+.spot.is-on .fov {
+  opacity: 1;
+}
+
+.spot.is-on .cam {
+  animation: scene-scan 4.2s ease-in-out infinite alternate;
+}
+
+.rec {
+  opacity: 0.5;
+}
+
+.spot.is-on .rec {
+  animation: scene-blink 1.2s steps(2, jump-none) infinite;
+}
+
+/* Território e gestão: camadas que entram quando o capítulo chega */
+.parcels > *,
+.tags > g {
+  opacity: 0;
+  transition: opacity 380ms var(--ease-out), transform 420ms var(--ease-out);
+}
+
+.tags > g {
+  transform: translateY(10px);
+}
+
+.parcels.is-on > *,
+.tags.is-on > g {
+  opacity: 1;
+  transform: none;
+}
+
+.ping {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: scene-ping 2.6s var(--ease-out) infinite;
+}
+
+.scene-flag {
+  position: absolute;
+  left: 24px;
+  bottom: 16px;
+  max-width: calc(100% - 48px);
+  margin: 0;
+  color: var(--mute);
+  font: 500 11px/1.4 var(--font-mono);
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
+
+/* Trilho de capítulos */
+.rail {
+  position: absolute;
+  right: 20px;
+  bottom: 14px;
+  z-index: 3;
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(11, 17, 13, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.rail-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--mute);
+  font: 500 11px/1.2 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 160ms var(--ease-out);
+}
+
+.rail-dot {
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  transition: background-color 200ms var(--ease-out), transform 200ms var(--ease-out);
+}
+
+.rail-item.is-active {
+  color: var(--bone);
+}
+
+.rail-item.is-active .rail-dot {
+  border-color: var(--banana);
+  background: var(--banana);
+  transform: scale(1.15);
+}
+
+/* Capítulos (texto que rola por cima da cena) */
+.journey-chapters {
+  position: relative;
+  z-index: 2;
+  margin-top: calc(-100svh + 64px);
+  pointer-events: none;
+}
+
+.chapter {
+  display: flex;
+  align-items: center;
+  width: min(1280px, 100% - 48px);
+  min-height: 100svh;
+  margin-inline: auto;
+}
+
+.chapter:first-child {
+  min-height: calc(100svh - 64px);
+}
+
+.chapter-card {
+  width: min(480px, 100%);
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(11, 17, 13, 0.78);
+  backdrop-filter: blur(10px);
+  opacity: 0.4;
+  transform: translateY(12px);
+  transition: opacity 360ms var(--ease-out), transform 420ms var(--ease-out);
+  pointer-events: auto;
+}
+
+.chapter.is-active .chapter-card {
+  opacity: 1;
+  transform: none;
+}
+
+.chapter-card h2 {
+  max-width: 16ch;
+  font-size: clamp(30px, 3.4vw, 46px);
+  font-weight: 700;
+  line-height: 1.04;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+.chapter-text {
+  margin: 16px 0 20px;
+  color: #cfd3c4;
+  font-size: 17px;
+  line-height: 1.55;
+}
+
+.chapter-card .note {
+  margin-top: 16px;
+}
+
+.chapter-card .text-link {
+  display: inline-block;
+  margin-top: 18px;
+}
+
+.chapter:first-child .chapter-card {
+  width: min(640px, 100%);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  backdrop-filter: none;
+  opacity: 1;
+  transform: none;
+}
+
+.chapter:first-child h1 {
+  font-size: clamp(42px, 5vw, 72px);
+  font-weight: 800;
+  line-height: 0.98;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+@keyframes scene-flow {
+  to {
+    stroke-dashoffset: -400;
+  }
+}
+
+@keyframes scene-sway {
+  from {
+    transform: rotate(-1.4deg);
+  }
+  to {
+    transform: rotate(1.6deg);
+  }
+}
+
+@keyframes scene-ring {
+  from {
+    opacity: 0.85;
+    transform: scale(0.1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+@keyframes scene-dash {
+  to {
+    stroke-dashoffset: -64;
+  }
+}
+
+@keyframes scene-blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes scene-scan {
+  from {
+    transform: rotate(-5deg);
+  }
+  to {
+    transform: rotate(5deg);
+  }
+}
+
+@keyframes scene-ping {
+  from {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(3.2);
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .rail-item:hover {
+    color: var(--bone);
+  }
+}
+
+@media (max-width: 960px) {
+  .journey-stage {
+    height: 46svh;
+  }
+
+  .journey-chapters {
+    margin-top: calc(-46svh + 64px);
+  }
+
+  .chapter,
+  .chapter:first-child {
+    align-items: flex-start;
+    min-height: 92svh;
+    padding-top: calc(46svh + 20px);
+  }
+
+  .chapter-card {
+    background: rgba(11, 17, 13, 0.94);
+  }
+
+  .chapter:first-child .chapter-card {
+    padding: 0;
+  }
+
+  .chapter:first-child h1 {
+    font-size: clamp(34px, 9vw, 52px);
+  }
+
+  .rail {
+    right: 10px;
+    bottom: 8px;
+    left: 10px;
+    justify-content: space-between;
+  }
+
+  .rail-item {
+    padding: 8px 5px;
+    font-size: 10px;
+  }
+
+  .rail-dot {
+    display: none;
+  }
+
+  .rail-item.is-active {
+    color: var(--banana);
+  }
+
+  .scene-flag {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .world,
+  .layer,
+  .chapter-card,
+  .river-hi,
+  .parcels > *,
+  .tags > g,
+  .spot,
+  .scene-label {
+    transition: none;
+  }
+
+  .river-flow,
+  .plant,
+  .ping,
+  .spot.is-on .ring,
+  .spot.is-on .link,
+  .spot.is-on .wifi,
+  .spot.is-on .cam,
+  .spot.is-on .rec {
+    animation: none;
+  }
+
+  .layer {
+    transform: none;
+  }
+}
