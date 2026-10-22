@@ -573,3 +573,24 @@
     transition: none !important;
   }
 }
+
+/* Demo do mapa (inteligência territorial), contida na página */
+.demo {
+  margin-top: 56px;
+}
+
+.demo .stage {
+  min-height: 640px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.demo .stage::before {
+  display: none;
+}
+
+@media (max-width: 960px) {
+  .demo .stage {
+    min-height: 0;
+  }
+}

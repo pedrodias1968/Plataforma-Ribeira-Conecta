@@ -3,19 +3,9 @@ import "@fontsource-variable/bricolage-grotesque";
 import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "./LandingPage.css";
+import { EcosystemJourney } from "./EcosystemJourney";
+import { StatusTag, type Status } from "./StatusTag";
 import { WebGisMock } from "./WebGisMock";
-
-type Status = "ready" | "building" | "planned";
-
-const STATUS_LABEL: Record<Status, string> = {
-  ready: "Funcionando",
-  building: "Em desenvolvimento",
-  planned: "Em planejamento",
-};
-
-function StatusTag({ status }: { status: Status }) {
-  return <span className={`tag tag-${status}`}>{STATUS_LABEL[status]}</span>;
-}
 
 const CONTACT = "contato@ribeiraconecta.com.br";
 
@@ -70,13 +60,13 @@ const STAGES: Array<{ status: Status; title: string; items: string[] }> = [
   {
     status: "planned",
     title: "Em planejamento",
-    items: ["Conectividade rural", "Serviços de campo"],
+    items: ["Conectividade rural: rede interna, Wi-Fi e enlaces", "Câmeras de segurança (CFTV) sobre a mesma rede"],
   },
 ];
 
 const NAV = [
-  ["plataforma", "Plataforma"],
-  ["publicos", "Para quem"],
+  ["inicio", "Ecossistema"],
+  ["mapa", "Mapa"],
   ["erp", "Gestão da banana"],
   ["estagio", "Estágio"],
   ["contato", "Contato"],
@@ -131,25 +121,27 @@ export function LandingPage() {
       </header>
 
       <main>
-        <section id="inicio" className="hero">
-          <WebGisMock>
-            <p className="kicker">Vale do Ribeira · inteligência territorial</p>
-            <h1>Do cacho à mesa, no mapa.</h1>
-            <p className="lede">
-              A propriedade inteira em uma tela: limites, vegetação por satélite, rios e a rotina da banana,
-              da colheita à venda. Para produtores, investidores e parceiros.
-            </p>
-            <div className="hero-actions">
-              <a href={`mailto:${CONTACT}?subject=Demonstra%C3%A7%C3%A3o`} className="btn btn-solid btn-lg">Agendar demonstração</a>
-              <a href="#plataforma" className="btn btn-ghost btn-lg">Ver o que já funciona</a>
-            </div>
-          </WebGisMock>
-        </section>
+        <EcosystemJourney
+          hero={
+            <>
+              <p className="kicker">Vale do Ribeira · ecossistema para a propriedade rural</p>
+              <h1>Do sinal ao cacho, a propriedade conectada.</h1>
+              <p className="lede">
+                Rede e câmeras de segurança, gestão da banana e inteligência territorial no mesmo ecossistema.
+                Para produtores, investidores e parceiros.
+              </p>
+              <div className="hero-actions">
+                <a href={`mailto:${CONTACT}?subject=Demonstra%C3%A7%C3%A3o`} className="btn btn-solid btn-lg">Agendar demonstração</a>
+                <a href="#conectividade" className="btn btn-ghost btn-lg">Ver o ecossistema</a>
+              </div>
+            </>
+          }
+        />
 
-        <section id="plataforma" className="band">
+        <section id="mapa" className="band">
           <div className="wrap split">
             <div className="split-head">
-              <p className="kicker">Plataforma</p>
+              <p className="kicker">Inteligência territorial</p>
               <h2>Uma camada de cada vez, sobre o mesmo território.</h2>
               <p className="muted">
                 O Vale do Ribeira vive de banana e de rio. A plataforma junta o que hoje está espalhado em
@@ -168,6 +160,9 @@ export function LandingPage() {
                 </li>
               ))}
             </ol>
+          </div>
+          <div className="wrap demo">
+            <WebGisMock />
           </div>
         </section>
 
@@ -243,9 +238,9 @@ export function LandingPage() {
             </div>
             <div className="prose">
               <p>
-                Startup de inteligência territorial focada no Vale do Ribeira, região produtora de banana.
-                Nossa missão é levar dados geoespaciais e gestão simples às propriedades rurais, transformando
-                informação em decisão de campo.
+                Startup do Vale do Ribeira, região produtora de banana. Reunimos infraestrutura digital para a
+                propriedade rural (rede, Wi-Fi e câmeras de segurança) e uma plataforma de gestão e inteligência
+                territorial, para transformar informação em decisão de campo.
               </p>
             </div>
           </div>
@@ -294,7 +289,7 @@ export function LandingPage() {
       <footer className="site-footer">
         <div className="wrap footer-inner">
           <span className="brand-plain">Ribeira Conecta</span>
-          <span className="muted">Inteligência territorial para a cadeia da banana.</span>
+          <span className="muted">Ecossistema digital para a cadeia da banana.</span>
           <span className="muted mono">© 2026 Ribeira Conecta</span>
         </div>
       </footer>
