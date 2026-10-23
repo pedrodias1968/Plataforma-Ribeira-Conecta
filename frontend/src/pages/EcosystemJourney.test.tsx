@@ -13,7 +13,11 @@ describe("EcosystemJourney", () => {
       expect(screen.getByRole("heading", { name: title })).toBeInTheDocument();
     }
     expect(screen.getAllByText("Em planejamento")).toHaveLength(2);
-    expect(screen.getByText(/o produtor mantém o próprio link/)).toBeInTheDocument();
+    expect(screen.getByText(/onde o trabalho acontece/)).toBeInTheDocument();
+    expect(screen.queryByText(/provedor/)).not.toBeInTheDocument();
+    for (const step of ["Projeto", "Instalação", "Rede e Wi-Fi", "Gestão e suporte"]) {
+      expect(screen.getByText(step)).toBeInTheDocument();
+    }
   });
 
   it("says on screen that the scene is an illustration", () => {

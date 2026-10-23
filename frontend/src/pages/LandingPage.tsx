@@ -4,6 +4,7 @@ import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "./LandingPage.css";
 import { EcosystemJourney } from "./EcosystemJourney";
+import { PropertyAnalyses } from "./PropertyAnalyses";
 import { StatusTag, type Status } from "./StatusTag";
 import { WebGisMock } from "./WebGisMock";
 
@@ -37,13 +38,44 @@ const AUDIENCES = [
   },
 ];
 
-const ERP_MODULES: Array<[string, string]> = [
-  ["Colheita por talhão", "Cachos, caixas, peso e descarte."],
-  ["Adubação e insumos", "O que foi aplicado, onde e quando."],
-  ["Estoque de insumos", "Entradas, saídas e saldo por produto."],
-  ["Custos por talhão e por kg", "Custo registrado; sem dado, mostra “sem registro”."],
-  ["Vendas e recebimentos", "Comprador, valor a receber e prazo."],
-  ["Relatório para o contador", "Vendas e custos do período em planilha."],
+type BananaItem = { title: string; text: string };
+
+const BANANA_GROUPS: Array<{ status: Status; title: string; intro: string; items: BananaItem[] }> = [
+  {
+    status: "ready",
+    title: "Já funciona no mapa",
+    intro: "O bananal visto de cima, talhão por talhão.",
+    items: [
+      { title: "Vigor do bananal por satélite", text: "Índice de vegetação (NDVI) por talhão, com máscara de nuvens e comparação entre datas." },
+      { title: "Exposição a cheias", text: "Cruzamento da propriedade com a cheia de setembro de 2026 no Vale do Ribeira, com a origem de cada dado." },
+    ],
+  },
+  {
+    status: "building",
+    title: "Em desenvolvimento",
+    intro: "A rotina do bananal, do cacho colhido ao dinheiro recebido.",
+    items: [
+      { title: "Colheita por talhão", text: "Cachos, caixas, peso e descarte de cada colheita." },
+      { title: "Adubação e insumos", text: "O que foi aplicado, em qual talhão e quando." },
+      { title: "Estoque de insumos", text: "Entradas, saídas e saldo por produto e unidade." },
+      { title: "Custos por talhão e por kg", text: "Custo registrado de cada talhão; o custo por kg só aparece com custo e peso completos." },
+      { title: "Vendas e recebimentos", text: "Comprador, valor a receber e prazo de cada venda." },
+      { title: "Relatório para o contador", text: "Vendas e custos do período em planilha." },
+      { title: "Correção de registros", text: "Nada é apagado: cada correção fica no histórico." },
+    ],
+  },
+  {
+    status: "planned",
+    title: "Próximas etapas para a banana",
+    intro: "Do solo à decisão de manejo, com validação agronômica.",
+    items: [
+      { title: "Análise de solo por talhão", text: "Amostras georreferenciadas e laudos de laboratório: pH, matéria orgânica, fósforo, potássio, CTC e saturação por bases." },
+      { title: "Amostragem inteligente", text: "Zonas de manejo a partir do relevo e do histórico do satélite, para saber onde coletar cada amostra." },
+      { title: "Calagem e adubação para a banana", text: "Recomendações por talhão a partir dos laudos, para a banana no Vale do Ribeira, validadas por agrônomo." },
+      { title: "Aptidão da área para banana", text: "Relevo, declividade, drenagem, chuva, temperatura, água e histórico de cheias, com resultado explicado." },
+      { title: "Inspeção do bananal", text: "Registro de vistorias em campo. Diagnóstico de doença só com validação de especialista." },
+    ],
+  },
 ];
 
 const STAGES: Array<{ status: Status; title: string; items: string[] }> = [
@@ -60,13 +92,19 @@ const STAGES: Array<{ status: Status; title: string; items: string[] }> = [
   {
     status: "planned",
     title: "Em planejamento",
-    items: ["Conectividade rural: rede interna, Wi-Fi e enlaces", "Câmeras de segurança (CFTV) sobre a mesma rede"],
+    items: [
+      "Conectividade rural: rede interna, Wi-Fi e enlaces",
+      "Câmeras de segurança (CFTV) sobre a mesma rede",
+      "Análises fundiárias, ambientais e de crédito rural",
+      "Solo, amostragem e aptidão para banana",
+    ],
   },
 ];
 
 const NAV = [
   ["inicio", "Ecossistema"],
   ["mapa", "Mapa"],
+  ["analises", "Análises"],
   ["erp", "Gestão da banana"],
   ["estagio", "Estágio"],
   ["contato", "Contato"],
@@ -132,7 +170,7 @@ export function LandingPage() {
               </p>
               <div className="hero-actions">
                 <a href={`mailto:${CONTACT}?subject=Demonstra%C3%A7%C3%A3o`} className="btn btn-solid btn-lg">Agendar demonstração</a>
-                <a href="#conectividade" className="btn btn-ghost btn-lg">Ver o ecossistema</a>
+                <a href="#conectividade" className="btn btn-glass btn-lg">Ver o ecossistema</a>
               </div>
             </>
           }
@@ -166,7 +204,9 @@ export function LandingPage() {
           </div>
         </section>
 
-        <section id="publicos" className="band band-alt">
+        <PropertyAnalyses />
+
+        <section id="publicos" className="band">
           <div className="wrap">
             <p className="kicker">Para quem</p>
             <h2>Uma base de dados, três formas de valor.</h2>
@@ -183,32 +223,43 @@ export function LandingPage() {
           </div>
         </section>
 
-        <section id="erp" className="band">
+        <section id="erp" className="band band-alt">
           <div className="wrap split">
             <div className="split-head">
               <p className="kicker">Gestão da banana</p>
               <h2>ERP Especializado em Bananicultura</h2>
               <p className="muted">
-                Desenhado a partir de entrevistas com produtores. Dado que o produtor não anotou aparece
-                como “sem registro”: o sistema não inventa valores.
+                Desenhado a partir de entrevistas com produtores do Vale do Ribeira. Tudo é registrado por talhão,
+                no mesmo mapa da propriedade: um módulo básico para todo produtor e módulos adicionais conforme a
+                realidade de cada sítio.
               </p>
-              <p className="note">Ainda não está disponível para contratação.</p>
+              <p className="note">Dado que o produtor não anotou aparece como “sem registro”: o sistema não inventa valores. Ainda não está disponível para contratação.</p>
             </div>
-            <ul className="ledger ledger-plain">
-              {ERP_MODULES.map(([title, text]) => (
-                <li key={title} className="ledger-row">
-                  <div>
-                    <h3>{title}</h3>
-                    <p>{text}</p>
+            <div className="banana-groups">
+              {BANANA_GROUPS.map((group) => (
+                <div key={group.title} className={`banana-group banana-${group.status}`}>
+                  <div className="banana-group-head">
+                    <div>
+                      <h3>{group.title}</h3>
+                      <p>{group.intro}</p>
+                    </div>
+                    <StatusTag status={group.status} />
                   </div>
-                  <StatusTag status="building" />
-                </li>
+                  <ul className="banana-list">
+                    {group.items.map((item) => (
+                      <li key={item.title}>
+                        <h4>{item.title}</h4>
+                        <p>{item.text}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               ))}
-            </ul>
+            </div>
           </div>
         </section>
 
-        <section id="estagio" className="band band-alt">
+        <section id="estagio" className="band">
           <div className="wrap">
             <p className="kicker">Estágio</p>
             <h2>Em que estágio estamos.</h2>
@@ -230,7 +281,7 @@ export function LandingPage() {
           </div>
         </section>
 
-        <section id="sobre" className="band">
+        <section id="sobre" className="band band-alt">
           <div className="wrap split">
             <div className="split-head">
               <p className="kicker">Sobre</p>
@@ -246,7 +297,7 @@ export function LandingPage() {
           </div>
         </section>
 
-        <section id="contato" className="band band-alt">
+        <section id="contato" className="band">
           <div className="wrap split">
             <div className="split-head">
               <p className="kicker">Contato</p>
