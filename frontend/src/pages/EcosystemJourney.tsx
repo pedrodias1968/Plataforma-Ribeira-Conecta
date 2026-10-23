@@ -23,6 +23,7 @@ type Chapter = {
   title?: string;
   text?: string;
   note?: string;
+  steps?: string[];
   status?: Status;
   link?: { href: string; label: string };
 };
@@ -36,8 +37,8 @@ const CHAPTERS: Chapter[] = [
     focus: { x: 640, y: 520, scale: 1.6 },
     kicker: "01 · Conectividade rural",
     title: "Rede onde a roça precisa.",
-    text: "Infraestrutura digital gerenciada para a propriedade: distribuição da rede interna, Wi-Fi e enlaces entre as áreas de trabalho.",
-    note: "Não somos provedor de internet: o produtor mantém o próprio link.",
+    text: "Levamos a internet da sede até onde o trabalho acontece: galpão, casa, câmeras e talhões, com rede interna, Wi-Fi e enlaces entre as áreas.",
+    steps: ["Projeto", "Instalação", "Rede e Wi-Fi", "Gestão e suporte"],
     status: "planned",
   },
   {
@@ -406,6 +407,16 @@ export function EcosystemJourney({ hero }: { hero: ReactNode }) {
                   <p className="kicker">{chapter.kicker}</p>
                   <h2>{chapter.title}</h2>
                   <p className="chapter-text">{chapter.text}</p>
+                  {chapter.steps && (
+                    <ol className="chapter-steps">
+                      {chapter.steps.map((step, index) => (
+                        <li key={step}>
+                          <span className="mono">{String(index + 1).padStart(2, "0")}</span>
+                          <span>{step}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
                   {chapter.status && <StatusTag status={chapter.status} />}
                   {chapter.note && <p className="note">{chapter.note}</p>}
                   {chapter.link && (
