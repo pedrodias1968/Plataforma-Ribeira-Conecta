@@ -83,3 +83,38 @@ a transição para `REVOKED`, junto ao evento
 `IDENTITY_MEMBERSHIP_REVOKED`. Repetir uma membership já revogada é
 idempotente e não cria um segundo audit. A revogação nunca exclui identity,
 membership, histórico ou desabilita RLS.
+
+## Troca controlada de papel (VIEWER ↔ MANAGER)
+
+A migration `053_persist_manager_role` persiste o papel `MANAGER` com chave
+determinística. As permissões continuam definidas em código
+(`ribeira_platform.iam.ROLE_PERMISSIONS`): o `MANAGER` lê e registra colheita,
+adubação, estoque, custos e vendas, e lê o relatório para o contador.
+
+O arquivo privado, modo `600`, exige o papel atual esperado e o novo papel. Só
+as transições `VIEWER → MANAGER` e `MANAGER → VIEWER` são aceitas:
+
+```json
+{
+  "external_issuer": "<configured issuer>",
+  "external_subject": "<provider subject>",
+  "tenant_id": "<authorized tenant>",
+  "expected_role": "VIEWER",
+  "new_role": "MANAGER",
+  "operator_actor": "SYSTEM_OPERATOR"
+}
+```
+
+Valide primeiro sem escrita:
+
+```bash
+PYTHONPATH=src .venv/bin/python -m ribeira_platform.identity_admin change-role \
+  --request-file ~/.config/ribeira/role-change-request.json --dry-run
+```
+
+Sem `--dry-run`, na mesma transação, a membership `ACTIVE` do papel esperado
+passa a `REVOKED` (nunca é apagada), a membership do novo papel é criada como
+`ACTIVE` e é gravado o evento `IDENTITY_MEMBERSHIP_ROLE_CHANGED`. Repetir a
+troca quando o novo papel já é a única membership ativa é idempotente
+(`ACTION=NO_CHANGE`). Uma membership histórica com o novo papel nunca é
+reativada implicitamente: o comando retorna conflito.

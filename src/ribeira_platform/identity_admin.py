@@ -13,6 +13,7 @@ from typing import Any
 from .identity_provisioning import (
     ExternalIdentityProvisioningRequest,
     ExternalMembershipRevocationRequest,
+    ExternalMembershipRoleChangeRequest,
     IdentityProvisioningService,
     ProvisioningConflict,
     ProvisioningNotFound,
@@ -76,6 +77,22 @@ def load_revocation_request_file(path: Path) -> ExternalMembershipRevocationRequ
     return request
 
 
+def load_role_change_request_file(path: Path) -> ExternalMembershipRoleChangeRequest:
+    payload = _load_secure_json(path)
+    if set(payload) != {
+        "external_issuer",
+        "external_subject",
+        "tenant_id",
+        "expected_role",
+        "new_role",
+        "operator_actor",
+    }:
+        raise ProvisioningRequestError("role change request fields are invalid")
+    request = ExternalMembershipRoleChangeRequest(**payload)
+    request.validate()
+    return request
+
+
 def provision(request_file: Path, *, dry_run: bool) -> int:
     request = load_request_file(request_file)
     dsn = os.getenv("RIBEIRA_DATABASE_URL")
@@ -124,6 +141,30 @@ def revoke(request_file: Path, *, dry_run: bool) -> int:
     return 0
 
 
+def change_role(request_file: Path, *, dry_run: bool) -> int:
+    request = load_role_change_request_file(request_file)
+    dsn = os.getenv("RIBEIRA_DATABASE_URL")
+    if not dsn:
+        raise ProvisioningRequestError("RIBEIRA_DATABASE_URL is required")
+    store = PostgresStore(dsn)
+    try:
+        result = IdentityProvisioningService(
+            store
+        ).change_external_identity_membership_role(request, dry_run=dry_run)
+    finally:
+        store.close()
+    print("REQUEST_FILE=SECURE")
+    print("IDENTITY=FOUND")
+    print("TENANT=FOUND")
+    print(f"PREVIOUS_ROLE={result.previous_role}")
+    print(f"NEW_ROLE={result.new_role}")
+    print(f"ACTION={result.action}")
+    print(f"AUDIT={result.audit}")
+    if dry_run:
+        print("DRY_RUN=PASS")
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Private Ribeira OIDC identity administration"
@@ -135,6 +176,9 @@ def main() -> None:
     revoke_parser = subcommands.add_parser("revoke")
     revoke_parser.add_argument("--request-file", type=Path, required=True)
     revoke_parser.add_argument("--dry-run", action="store_true")
+    change_parser = subcommands.add_parser("change-role")
+    change_parser.add_argument("--request-file", type=Path, required=True)
+    change_parser.add_argument("--dry-run", action="store_true")
     arguments = parser.parse_args()
     try:
         if arguments.command == "provision":
@@ -143,6 +187,10 @@ def main() -> None:
             )
         if arguments.command == "revoke":
             raise SystemExit(revoke(arguments.request_file, dry_run=arguments.dry_run))
+        if arguments.command == "change-role":
+            raise SystemExit(
+                change_role(arguments.request_file, dry_run=arguments.dry_run)
+            )
     except ProvisioningConflict:
         print("PROVISIONING=CONFLICT", file=sys.stderr)
         raise SystemExit(2)

@@ -1,11 +1,19 @@
 import { useEffect, useState } from "react";
 
 import type { Farm360Api } from "../api/client";
+import { BananaManagementPage } from "./BananaManagementPage";
 import { HomePage } from "./HomePage";
 import { PropertyWorkspace } from "./PropertyWorkspace";
 import "./PilotShell.css";
 
-type View = "HOME" | "FARM360" | "HELP";
+type View = "HOME" | "FARM360" | "BANANA" | "HELP";
+
+const VIEWS: Array<[View, string]> = [
+  ["HOME", "Visão geral"],
+  ["FARM360", "Farm360"],
+  ["BANANA", "Gestão da banana"],
+  ["HELP", "Ajuda"],
+];
 
 export function PilotShell({
   api,
@@ -46,19 +54,41 @@ export function PilotShell({
     setSelectedPropertyId(propertyId);
     setView("FARM360");
   };
+  const openManagement = (propertyId: string) => {
+    setSelectedPropertyId(propertyId);
+    setView("BANANA");
+  };
   return (
     <div className="pilot-shell">
       <header className="pilot-header">
-        <div><p className="eyebrow">Ribeira Conecta</p><strong>piloto beta</strong></div>
+        <div className="pilot-brand">
+          <svg viewBox="0 0 24 24" aria-hidden="true" className="pilot-brand-mark">
+            <path d="M3 17c4-1 6-5 9-5s5 2 9 1" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            <path d="M3 12c4-1 6-5 9-5s5 2 9 1" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0.5" />
+          </svg>
+          <div>
+            <p className="eyebrow">Ribeira Conecta</p>
+            <strong>piloto beta</strong>
+          </div>
+        </div>
         <nav aria-label="Navegação principal">
-          <button type="button" className={view === "HOME" ? "selected" : ""} onClick={() => setView("HOME")}>Visão geral</button>
-          <button type="button" className={view === "FARM360" ? "selected" : ""} onClick={() => setView("FARM360")}>Farm360</button>
-          <button type="button" className={view === "HELP" ? "selected" : ""} onClick={() => setView("HELP")}>Ajuda</button>
+          {VIEWS.map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              className={view === id ? "selected" : ""}
+              aria-current={view === id ? "page" : undefined}
+              onClick={() => setView(id)}
+            >
+              {label}
+            </button>
+          ))}
         </nav>
       </header>
-      {view === "HOME" && <HomePage api={api} tenantId={tenantId} onOpenFarm360={openFarm360} />}
-      {view === "FARM360" && <PropertyWorkspace key={selectedPropertyId ?? "portfolio"} api={api} apiBaseUrl={apiBaseUrl} tenantId={tenantId} initialPropertyId={selectedPropertyId} token={token} canManageProperties={canManageProperties} canManageBoundary={canManageBoundary} canRunSatelliteOperations={canRunSatelliteOperations} canManageAssets={canManageAssets} canCompleteActions={canCompleteActions} canEvaluateAssets={canEvaluateAssets} canEvaluateFields={canEvaluateFields} canEvaluateTemporalDelta={canEvaluateTemporalDelta} />}
-      {view === "HELP" && <main className="state"><h1>Ajuda do piloto</h1><p>Use a Visão geral para abrir uma propriedade e o Farm360 para consultar limite, ativos e evidências disponíveis.</p><p>Quando uma análise ainda não está disponível, a tela explica o que falta. Nenhuma conclusão é criada por suposição.</p><p>Envie feedback pela propriedade no Farm360. Telemetria, adequação agrícola e automações ainda não estão disponíveis neste beta.</p></main>}
+      {view === "HOME" && <HomePage api={api} tenantId={tenantId} onOpenFarm360={openFarm360} onOpenManagement={openManagement} />}
+      {view === "FARM360" && <PropertyWorkspace key={selectedPropertyId ?? "portfolio"} api={api} apiBaseUrl={apiBaseUrl} tenantId={tenantId} initialPropertyId={selectedPropertyId} token={token} canManageProperties={canManageProperties} canManageBoundary={canManageBoundary} canRunSatelliteOperations={canRunSatelliteOperations} canManageAssets={canManageAssets} canCompleteActions={canCompleteActions} canEvaluateAssets={canEvaluateAssets} canEvaluateFields={canEvaluateFields} canEvaluateTemporalDelta={canEvaluateTemporalDelta} onOpenManagement={openManagement} />}
+      {view === "BANANA" && <BananaManagementPage api={api} apiBaseUrl={apiBaseUrl} tenantId={tenantId} token={token} propertyId={selectedPropertyId} onSelectProperty={setSelectedPropertyId} />}
+      {view === "HELP" && <main className="state"><h1>Ajuda do piloto</h1><p>Use a Visão geral para abrir uma propriedade, o Farm360 para consultar limite, ativos e evidências, e a Gestão da banana para registrar colheita, adubação, estoque, custos e vendas por talhão.</p><p>Quando uma análise ainda não está disponível, a tela explica o que falta. Nenhuma conclusão é criada por suposição.</p><p>Envie feedback pela propriedade no Farm360. Telemetria, adequação agrícola e automações ainda não estão disponíveis neste beta.</p></main>}
     </div>
   );
 }

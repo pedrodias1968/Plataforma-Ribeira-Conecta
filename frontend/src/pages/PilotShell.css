@@ -1,150 +1,114 @@
+/* Cabeçalho do app no padrão da landing: marca, navegação em pílulas e amarelo banana. */
 .pilot-header {
-  align-items: center;
-  background: #0a0e17;
-  border-bottom: 1px solid #1e293b;
-  color: #f8fafc;
+  position: sticky;
+  top: 0;
+  z-index: 30;
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  padding: 16px 24px;
+  gap: 16px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--color-border);
+  background: rgba(11, 17, 13, 0.92);
+  backdrop-filter: blur(12px);
+  color: var(--color-text-primary);
 }
 
-.pilot-header p {
-  font-size: var(--font-size-body);
-  font-weight: var(--font-weight-body);
+.pilot-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pilot-brand-mark {
+  width: 26px;
+  height: 26px;
+  color: var(--color-accent-primary);
+}
+
+.pilot-header .eyebrow {
   margin: 0;
+  line-height: 1.2;
+}
+
+.pilot-header strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .pilot-header nav {
   display: flex;
   gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-bg-secondary);
 }
 
-.pilot-header button {
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-body-sm);
-  font-weight: var(--font-weight-label);
+.pilot-header nav button {
   padding: 8px 16px;
-  transition: all 0.2s ease;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  transition: color 160ms var(--ease-out), background-color 160ms var(--ease-out), transform 120ms var(--ease-out);
 }
 
-.pilot-header button:hover {
-  border-color: var(--color-border-light);
-  color: var(--color-text-primary);
+.pilot-header nav button:active {
+  transform: scale(0.97);
 }
 
-.pilot-header button.selected {
+.pilot-header nav button.selected {
   background: var(--color-accent-primary);
-  border-color: var(--color-accent-primary);
-  color: #0a0e17;
+  color: #0b110d;
+  font-weight: 600;
 }
 
-.pilot-header button.selected:hover {
-  background: var(--color-accent-secondary);
-  border-color: var(--color-accent-secondary);
-}
-
-.pilot-header button:focus-visible {
-  outline: 2px solid var(--color-border-focused);
-  outline-offset: 2px;
+@media (hover: hover) and (pointer: fine) {
+  .pilot-header nav button:not(.selected):hover {
+    color: var(--color-text-primary);
+    background: rgba(236, 232, 218, 0.06);
+  }
 }
 
 .module-status {
-  background: var(--color-bg-primary);
-  border-bottom: 1px solid #1e293b;
   display: flex;
   flex-wrap: wrap;
   gap: 12px 24px;
   padding: 12px 24px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-primary);
 }
 
 .module-status > span {
   color: var(--color-text-secondary);
-  font-size: var(--font-size-xmicro);
-  font-weight: var(--font-weight-label);
+  font-family: var(--font-family-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  letter-spacing: var(--letter-spacing-label);
 }
 
-@media (max-width: 1440px) {
-  .pilot-header {
-    padding: 14px 20px;
-  }
-
-  .pilot-header p {
-    font-size: var(--font-size-body-sm);
-  }
-
-  .pilot-header button {
-    padding: 7px 14px;
-    font-size: var(--font-size-micro);
-  }
-
-  .module-status {
-    padding: 10px 20px;
-    gap: 10px 20px;
-  }
-
-  .module-status > span {
-    font-size: var(--font-size-micro);
-  }
-}
-
-@media (max-width: 768px) {
+@media (max-width: 860px) {
   .pilot-header {
     flex-direction: column;
-    gap: 12px;
-    padding: 12px 16px;
-  }
-
-  .pilot-header nav {
-    width: 100%;
-    justify-content: flex-start;
-    flex-wrap: wrap;
-  }
-
-  .pilot-header button {
-    flex: 1 1 auto;
-    min-width: 120px;
-    text-align: center;
-  }
-
-  .module-status {
-    padding: 10px 16px;
-    gap: 8px 16px;
-  }
-
-  .module-status > span {
-    font-size: var(--font-size-xmicro);
-  }
-}
-
-@media (max-width: 390px) {
-  .pilot-header {
+    align-items: stretch;
+    gap: 10px;
     padding: 10px 14px;
   }
 
-  .pilot-header p {
-    font-size: var(--font-size-micro);
-  }
-
-  .pilot-header button {
-    padding: 6px 12px;
-    font-size: var(--font-size-xmicro);
-  }
-
   .pilot-header nav {
-    gap: 3px;
+    overflow-x: auto;
+    scrollbar-width: none;
   }
 
-  .module-status {
-    padding: 8px 14px;
-    gap: 8px 14px;
-  }
-
-  .module-status > span {
-    font-size: var(--font-size-xmicro);
+  .pilot-header nav button {
+    flex: 1 0 auto;
+    padding: 8px 12px;
+    font-size: 13px;
+    white-space: nowrap;
   }
 }

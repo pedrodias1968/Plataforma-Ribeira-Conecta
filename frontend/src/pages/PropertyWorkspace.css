@@ -1,6 +1,6 @@
-.property-search { color: #4b5d51; display: grid; font-size: 12px; gap: 3px; margin: 0 0 8px; }
+.property-search { color: var(--color-text-secondary); display: grid; font-size: 12px; gap: 3px; margin: 0 0 8px; }
 
-.property-search-status { color: #66756c; font-size: 11px; margin: 0 0 8px; }
+.property-search-status { color: var(--color-text-muted); font-size: 11px; margin: 0 0 8px; }
 
 .portfolio-map {
   border-bottom: 0;
@@ -9,14 +9,16 @@
 }
 
 .portfolio-map h3 {
-  color: #4b5d51;
+  color: var(--color-text-muted);
+  font-family: var(--font-family-mono);
   font-size: 11px;
   text-transform: uppercase;
 }
 
 .portfolio-map .map-canvas {
-  border: 1px solid #d9e2da;
-  border-radius: 5px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  overflow: hidden;
   height: 180px;
 }
 
@@ -46,9 +48,9 @@
 
 .property-form .property-draft-remove,
 .property-form .property-draft-actions button {
-  background: #f8fbf8;
-  border-color: #b9c9bc;
-  color: #14532d;
+  background: transparent;
+  border-color: var(--color-border-light);
+  color: var(--color-text-primary);
 }
 
 .property-draft-actions {

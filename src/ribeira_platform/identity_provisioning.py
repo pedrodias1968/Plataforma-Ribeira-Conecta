@@ -11,6 +11,9 @@ from .postgres import PostgresStore
 VIEWER_ROLE = "VIEWER"
 PROVISION_EVENT = "IDENTITY_MEMBERSHIP_PROVISIONED"
 REVOCATION_EVENT = "IDENTITY_MEMBERSHIP_REVOKED"
+ROLE_CHANGE_EVENT = "IDENTITY_MEMBERSHIP_ROLE_CHANGED"
+# Only these transitions can be applied by the local operator command.
+ALLOWED_ROLE_CHANGES = frozenset({("VIEWER", "MANAGER"), ("MANAGER", "VIEWER")})
 
 
 class ProvisioningConflict(RuntimeError):
@@ -91,6 +94,45 @@ class RevocationResult:
     membership: str
     role: str
     current_status: str
+    action: str
+    audit: str
+    dry_run: bool
+
+
+@dataclass(frozen=True)
+class ExternalMembershipRoleChangeRequest:
+    external_issuer: str
+    external_subject: str
+    tenant_id: str
+    expected_role: str
+    new_role: str
+    operator_actor: str
+
+    def validate(self) -> None:
+        fields = {
+            "external_issuer": self.external_issuer,
+            "external_subject": self.external_subject,
+            "tenant_id": self.tenant_id,
+            "expected_role": self.expected_role,
+            "new_role": self.new_role,
+            "operator_actor": self.operator_actor,
+        }
+        if any(
+            not isinstance(value, str) or not value.strip() for value in fields.values()
+        ):
+            raise ProvisioningRequestError("role change request fields are required")
+        if (self.expected_role, self.new_role) not in ALLOWED_ROLE_CHANGES:
+            raise ProvisioningRequestError(
+                "only VIEWER <-> MANAGER role changes are supported"
+            )
+        if self.operator_actor.strip().lower() in {"user", "admin"}:
+            raise ProvisioningRequestError("operator actor must be specific")
+
+
+@dataclass(frozen=True)
+class RoleChangeResult:
+    previous_role: str
+    new_role: str
     action: str
     audit: str
     dry_run: bool
@@ -298,6 +340,115 @@ class IdentityProvisioningService:
                 request.expected_role,
                 current_status,
                 "REVOKED",
+                "WRITTEN",
+                False,
+            )
+
+    def change_external_identity_membership_role(
+        self,
+        request: ExternalMembershipRoleChangeRequest,
+        *,
+        dry_run: bool = False,
+    ) -> RoleChangeResult:
+        """Move one active membership between two allowed roles, keeping history.
+
+        The previous membership is marked REVOKED (never deleted) and the new
+        role is inserted as ACTIVE in the same transaction, with one audit
+        event. Repeating the change when the new role is already the only
+        active membership is idempotent.
+        """
+        request.validate()
+        with self.store.tenant_transaction(None, platform_admin=True):
+            tenant = self.store.connection.execute(
+                "SELECT id FROM tenant WHERE id=%s FOR KEY SHARE", (request.tenant_id,)
+            ).fetchone()
+            if tenant is None:
+                raise ProvisioningNotFound("tenant was not found")
+            roles = {
+                str(row["code"]): row["id"]
+                for row in self.store.connection.execute(
+                    "SELECT id, code FROM iam_role WHERE code = ANY(%s)",
+                    ([request.expected_role, request.new_role],),
+                ).fetchall()
+            }
+            if request.expected_role not in roles or request.new_role not in roles:
+                raise ProvisioningRequestError("requested role was not found")
+            identity = self.store.connection.execute(
+                """SELECT id, status, platform_admin FROM identity_user
+                   WHERE external_issuer=%s AND external_subject=%s FOR UPDATE""",
+                (request.external_issuer, request.external_subject),
+            ).fetchone()
+            if identity is None:
+                raise ProvisioningNotFound("identity was not found")
+            if identity["status"] != "ACTIVE" or identity["platform_admin"]:
+                raise ProvisioningConflict("identity is not eligible for role change")
+
+            memberships = self.store.connection.execute(
+                """SELECT role_id, status FROM tenant_membership
+                   WHERE tenant_id=%s AND user_id=%s FOR UPDATE""",
+                (request.tenant_id, identity["id"]),
+            ).fetchall()
+            if not memberships:
+                raise ProvisioningNotFound("membership was not found")
+            expected_id = str(roles[request.expected_role])
+            new_id_value = str(roles[request.new_role])
+            active = [row for row in memberships if row["status"] == "ACTIVE"]
+            if len(active) == 1 and str(active[0]["role_id"]) == new_id_value:
+                return RoleChangeResult(
+                    request.expected_role,
+                    request.new_role,
+                    "NO_CHANGE",
+                    "NOT_WRITTEN",
+                    dry_run,
+                )
+            if len(active) != 1 or str(active[0]["role_id"]) != expected_id:
+                raise ProvisioningConflict("active membership does not match request")
+            if any(str(row["role_id"]) == new_id_value for row in memberships):
+                # A historical membership with the new role exists; it is never
+                # reactivated implicitly.
+                raise ProvisioningConflict("a previous membership with the new role exists")
+            if dry_run:
+                return RoleChangeResult(
+                    request.expected_role,
+                    request.new_role,
+                    "WOULD_CHANGE",
+                    "WOULD_WRITE",
+                    True,
+                )
+
+            updated = self.store.connection.execute(
+                """UPDATE tenant_membership SET status='REVOKED'
+                   WHERE tenant_id=%s AND user_id=%s AND role_id=%s AND status='ACTIVE'""",
+                (request.tenant_id, identity["id"], roles[request.expected_role]),
+            )
+            if updated.rowcount != 1:
+                raise ProvisioningConflict("membership state changed before role change")
+            self.store.connection.execute(
+                """INSERT INTO tenant_membership(tenant_id,user_id,role_id,status)
+                   VALUES (%s,%s,%s,'ACTIVE')""",
+                (request.tenant_id, identity["id"], roles[request.new_role]),
+            )
+            self.store.audit(
+                request.tenant_id,
+                request.operator_actor,
+                ROLE_CHANGE_EVENT,
+                "tenant_membership",
+                str(identity["id"]),
+                {
+                    "target_user_id": str(identity["id"]),
+                    "previous_role": request.expected_role,
+                    "new_role": request.new_role,
+                    "previous_membership_status": "REVOKED",
+                    "membership_status": "ACTIVE",
+                    "role_change": "INTERNAL_OPERATOR",
+                },
+                new_id(),
+                now_utc(),
+            )
+            return RoleChangeResult(
+                request.expected_role,
+                request.new_role,
+                "CHANGED",
                 "WRITTEN",
                 False,
             )
