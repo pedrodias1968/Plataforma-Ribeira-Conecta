@@ -67,7 +67,7 @@ const CHAPTERS: Chapter[] = [
     id: "territorio",
     label: "Território",
     spot: "territorio",
-    focus: { x: 1000, y: 600, scale: 1.45 },
+    focus: { x: 1080, y: 505, scale: 1.3 },
     kicker: "04 · Inteligência territorial",
     title: "O mapa que junta tudo.",
     text: "Limite da propriedade, vegetação por satélite e rios do Vale do Ribeira, a partir de fontes oficiais abertas.",
@@ -152,7 +152,7 @@ export function EcosystemJourney({ hero }: { hero: ReactNode }) {
 
   const current = CHAPTERS.find((chapter) => chapter.id === active) ?? CHAPTERS[0];
   const lit = hover ?? current.spot;
-  const target = narrow ? { x: 800, y: 450 } : { x: active === "vale" ? 1120 : 1040, y: 450 };
+  const target = narrow ? { x: active === "territorio" ? 760 : active === "vale" ? 790 : 800, y: 450 } : { x: active === "vale" ? 1120 : 1040, y: 450 };
   const focus = current.focus;
   const tx = target.x - focus.x * focus.scale;
   const ty = target.y - focus.y * focus.scale;
@@ -180,7 +180,7 @@ export function EcosystemJourney({ hero }: { hero: ReactNode }) {
   });
 
   return (
-    <div className="journey" ref={rootRef}>
+    <div className={`journey${active === "vale" ? "" : " is-zoomed"}`} ref={rootRef}>
       <div className="journey-stage">
         <svg
           ref={sceneRef}
@@ -232,7 +232,7 @@ export function EcosystemJourney({ hero }: { hero: ReactNode }) {
               <path d={RIVER} fill="none" stroke="url(#water)" strokeWidth="50" strokeLinecap="round" />
               <path className="river-flow" d={RIVER} fill="none" stroke="#c9e3ff" strokeOpacity="0.35" strokeWidth="2.2" strokeLinecap="round" />
               <path className="river-glint" d={RIVER} fill="none" stroke="#f6dc86" strokeOpacity="0.45" strokeWidth="3" strokeLinecap="round" />
-              <path className={`river-hi${lit === "territorio" ? " is-on" : ""}`} d={RIVER} fill="none" stroke="url(#scene-hatch)" strokeWidth="130" strokeLinecap="round" />
+              <path className={`river-hi${lit === "territorio" ? " is-on" : ""}`} d={RIVER} fill="none" stroke="url(#scene-hatch)" strokeWidth="64" strokeLinecap="round" />
 
               {PLANTS.map((plant) => (
                 <BananaPlant key={`${plant.x.toFixed(1)}-${plant.y.toFixed(1)}`} plant={plant} />
@@ -254,9 +254,9 @@ export function EcosystemJourney({ hero }: { hero: ReactNode }) {
               {/* Gestão: etiquetas de registro ao lado das plantas. */}
               <g className={`tags${lit === "gestao" ? " is-on" : ""}`} aria-hidden="true">
                 {[
-                  { x: 870, y: 470, label: "Colheita", to: [930, 566] },
-                  { x: 1060, y: 446, label: "Adubação", to: [1060, 590] },
-                  { x: 1240, y: 478, label: "Custo por kg", to: [1200, 600] },
+                  { x: 900, y: 488, label: "Colheita", to: [930, 568] },
+                  { x: 1012, y: 452, label: "Adubação", to: [1040, 592] },
+                  { x: 1150, y: 424, label: "Custo por kg", to: [1170, 604] },
                 ].map((tag, index) => (
                   <g key={tag.label} style={{ transitionDelay: `${index * 90}ms` }}>
                     <path d={`M${tag.x} ${tag.y + 14} Q${tag.x} ${(tag.y + tag.to[1]) / 2} ${tag.to[0]} ${tag.to[1]}`} fill="none" stroke="#e9c54a" strokeOpacity="0.7" strokeWidth="1.6" strokeDasharray="3 5" strokeLinecap="round" />
@@ -347,12 +347,33 @@ export function EcosystemJourney({ hero }: { hero: ReactNode }) {
               <rect x="800" y="548" width="740" height="120" fill="transparent" />
               <SceneLabel x={1000} y={702} text="Gestão da banana" />
             </g>
+            {/* Território: satélite observando o bananal. */}
             <g className={spot("territorio")} role="button" tabIndex={0} aria-label="Inteligência territorial, ver capítulo" {...spotHandlers("territorio")}>
-              <circle cx="1470" cy="360" r="28" fill="transparent" />
-              <circle cx="1470" cy="360" r="18" fill="url(#glow)" opacity="0.6" />
-              <circle cx="1470" cy="360" r="6" fill="#f6dc86" />
-              <circle className="ping" cx="1470" cy="360" r="8" fill="none" stroke="#e9c54a" strokeWidth="2" />
-              <SceneLabel x={1470} y={398} text="Território" />
+              <circle cx="1380" cy="300" r="74" fill="transparent" />
+              <polygon className="sat-beam" points="1374,318 862,566 1176,612" fill="url(#beam-g)" />
+              <g className="sat-scan" aria-hidden="true">
+                <path d="M1374 318 L1019 589" fill="none" stroke="#f6dc86" strokeOpacity="0.55" strokeWidth="1.4" strokeDasharray="4 8" />
+              </g>
+              <circle cx="1380" cy="300" r="46" fill="url(#glow)" opacity="0.22" />
+              <g transform="translate(1380 300) rotate(-16)">
+                <g className="sat-float">
+                  <path d="M-20 0 L-12 0 M12 0 L20 0" stroke="#cfd3c4" strokeWidth="2" strokeLinecap="round" />
+                  {[-1, 1].map((side) => (
+                    <g key={side} transform={`scale(${side} 1)`}>
+                      <rect x="20" y="-9" width="46" height="18" rx="2" fill="url(#panel-g)" stroke="#9cc0ea" strokeOpacity="0.55" strokeWidth="1" />
+                      <path d="M31.5 -9 V9 M43 -9 V9 M54.5 -9 V9 M20 0 H66" stroke="#0b1a2e" strokeOpacity="0.6" strokeWidth="1" />
+                      <path d="M21 -8 L40 -8" stroke="#ffffff" strokeOpacity="0.35" strokeWidth="1" />
+                    </g>
+                  ))}
+                  <rect x="-12" y="-10" width="24" height="20" rx="3" fill="url(#cam-g)" />
+                  <rect x="-10" y="-8" width="20" height="16" rx="2" fill="url(#foil-g)" />
+                  <path d="M-10 -2 H10 M-3 -8 V8" stroke="#7a5a12" strokeOpacity="0.45" strokeWidth="0.8" />
+                  <path d="M0 10 L0 15" stroke="#cfd3c4" strokeWidth="1.6" />
+                  <ellipse cx="0" cy="17" rx="8" ry="3.2" fill="#e3e6da" stroke="#8d9484" strokeWidth="0.8" />
+                  <circle className="sat-led" cx="9" cy="-12" r="1.8" fill="#f6dc86" />
+                </g>
+              </g>
+              <SceneLabel x={1380} y={352} text="Território" />
             </g>
 
             <g className="layer layer-front" aria-hidden="true">

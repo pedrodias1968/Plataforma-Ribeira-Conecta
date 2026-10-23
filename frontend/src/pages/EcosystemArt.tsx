@@ -151,6 +151,19 @@ export function SceneDefs() {
         <stop offset="0" stopColor="#e9c54a" stopOpacity="0.38" />
         <stop offset="1" stopColor="#e9c54a" stopOpacity="0.02" />
       </linearGradient>
+      <linearGradient id="panel-g" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stopColor="#3d7cc9" />
+        <stop offset="1" stopColor="#15325e" />
+      </linearGradient>
+      <linearGradient id="foil-g" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stopColor="#f6dc86" />
+        <stop offset="0.5" stopColor="#c9a62f" />
+        <stop offset="1" stopColor="#8a6a1c" />
+      </linearGradient>
+      <linearGradient id="beam-g" gradientUnits="userSpaceOnUse" x1="1374" y1="318" x2="1019" y2="600">
+        <stop offset="0" stopColor="#f6dc86" stopOpacity="0.32" />
+        <stop offset="1" stopColor="#f6dc86" stopOpacity="0.03" />
+      </linearGradient>
       <radialGradient id="vignette" cx="50%" cy="45%" r="75%">
         <stop offset="0.6" stopColor="#050a07" stopOpacity="0" />
         <stop offset="1" stopColor="#050a07" stopOpacity="0.75" />
