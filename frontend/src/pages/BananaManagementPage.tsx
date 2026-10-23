@@ -8,15 +8,17 @@ import { CostPanel } from "../features/costs/CostPanel";
 import { FertilizationPanel } from "../features/fertilization/FertilizationPanel";
 import { HarvestPanel } from "../features/harvest/HarvestPanel";
 import { SalesPanel } from "../features/sales/SalesPanel";
+import { SoilPanel } from "../features/soil/SoilPanel";
 import { StockPanel } from "../features/stock/StockPanel";
 import { customerPropertyName } from "../presentation";
 import "./BananaManagementPage.css";
 
-type ModuleId = "colheita" | "adubacao" | "estoque" | "custos" | "vendas" | "contador" | "correcoes";
+type ModuleId = "colheita" | "adubacao" | "solo" | "estoque" | "custos" | "vendas" | "contador" | "correcoes";
 
 const MODULES: Array<{ id: ModuleId; label: string; hint: string }> = [
   { id: "colheita", label: "Colheita", hint: "Cachos, caixas, peso e descarte por talhão." },
   { id: "adubacao", label: "Adubação", hint: "O que foi aplicado, em qual talhão e quando." },
+  { id: "solo", label: "Solo", hint: "Amostras de solo georreferenciadas e laudos de laboratório por talhão." },
   { id: "estoque", label: "Estoque", hint: "Entradas, saídas e saldo de cada insumo." },
   { id: "custos", label: "Custos", hint: "Custo por talhão e por kg, só com dados completos." },
   { id: "vendas", label: "Vendas", hint: "Comprador, valor a receber, prazo e pagamentos." },
@@ -150,6 +152,7 @@ export function BananaManagementPage({
           <div id="erp-panel" role="tabpanel" aria-labelledby={`erp-tab-${active}`} className="erp-panel" key={`${propertyId}-${active}`}>
             {active === "colheita" && <HarvestPanel fields={fields} {...panelProps} />}
             {active === "adubacao" && <FertilizationPanel fields={fields} {...panelProps} />}
+            {active === "solo" && <SoilPanel fields={fields} {...panelProps} />}
             {active === "estoque" && <StockPanel {...panelProps} />}
             {active === "custos" && <CostPanel fields={fields} {...panelProps} />}
             {active === "vendas" && <SalesPanel {...panelProps} />}
