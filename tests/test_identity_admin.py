@@ -9,6 +9,7 @@ from pathlib import Path
 from ribeira_platform.identity_admin import (
     load_request_file,
     load_revocation_request_file,
+    load_role_change_request_file,
 )
 from ribeira_platform.identity_provisioning import ProvisioningRequestError
 
@@ -90,6 +91,36 @@ class IdentityAdminRequestFileTests(unittest.TestCase):
         self.addCleanup(link.unlink, missing_ok=True)
         with self.assertRaises(ProvisioningRequestError):
             load_revocation_request_file(link)
+
+    def role_change_file(self, expected_role: str, new_role: str, mode: int = 0o600) -> Path:
+        path = self.request_file(mode)
+        path.write_text(
+            json.dumps(
+                {
+                    "external_issuer": "https://issuer.synthetic.test/",
+                    "external_subject": "provider|synthetic-test-subject",
+                    "tenant_id": "00000000-0000-4000-8000-000000000001",
+                    "expected_role": expected_role,
+                    "new_role": new_role,
+                    "operator_actor": "SYSTEM_OPERATOR_TEST",
+                }
+            ),
+            encoding="utf-8",
+        )
+        return path
+
+    def test_role_change_request_accepts_only_viewer_manager_transitions(self) -> None:
+        request = load_role_change_request_file(self.role_change_file("VIEWER", "MANAGER"))
+        self.assertEqual((request.expected_role, request.new_role), ("VIEWER", "MANAGER"))
+        back = load_role_change_request_file(self.role_change_file("MANAGER", "VIEWER"))
+        self.assertEqual(back.new_role, "VIEWER")
+        for expected, new in (("VIEWER", "TENANT_ADMIN"), ("VIEWER", "VIEWER"), ("ANALYST", "MANAGER")):
+            with self.assertRaises(ProvisioningRequestError):
+                load_role_change_request_file(self.role_change_file(expected, new))
+
+    def test_insecure_role_change_request_is_rejected(self) -> None:
+        with self.assertRaises(ProvisioningRequestError):
+            load_role_change_request_file(self.role_change_file("VIEWER", "MANAGER", 0o644))
 
 
 if __name__ == "__main__":

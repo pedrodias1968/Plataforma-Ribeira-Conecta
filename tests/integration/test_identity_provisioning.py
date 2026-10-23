@@ -22,6 +22,7 @@ from ribeira_platform.identity_admin import provision, revoke
 from ribeira_platform.identity_provisioning import (
     ExternalIdentityProvisioningRequest,
     ExternalMembershipRevocationRequest,
+    ExternalMembershipRoleChangeRequest,
     IdentityProvisioningService,
     ProvisioningConflict,
     ProvisioningNotFound,
@@ -594,6 +595,87 @@ class IdentityProvisioningPostgresTests(unittest.TestCase):
             },
         )
         self.assertEqual(approval.status_code, 403)
+
+    def role_change(
+        self,
+        tenant_id: str,
+        expected_role: str,
+        new_role: str,
+        *,
+        subject: str = "provider|synthetic-viewer",
+        dry_run: bool = False,
+    ):
+        return IdentityProvisioningService(
+            self.store
+        ).change_external_identity_membership_role(
+            ExternalMembershipRoleChangeRequest(
+                external_issuer="https://issuer.synthetic.test/",
+                external_subject=subject,
+                tenant_id=tenant_id,
+                expected_role=expected_role,
+                new_role=new_role,
+                operator_actor="SYSTEM_OPERATOR_TEST",
+            ),
+            dry_run=dry_run,
+        )
+
+    def memberships(self, tenant_id: str, user_id: str) -> list[tuple[str, str]]:
+        with self.store.tenant_transaction(None, platform_admin=True):
+            rows = self.store.connection.execute(
+                """SELECT r.code, m.status FROM tenant_membership m
+                   JOIN iam_role r ON r.id=m.role_id
+                   WHERE m.tenant_id=%s AND m.user_id=%s ORDER BY r.code""",
+                (tenant_id, user_id),
+            ).fetchall()
+        return [(str(row["code"]), str(row["status"])) for row in rows]
+
+    def test_manager_role_is_persisted(self) -> None:
+        with self.store.tenant_transaction(None, platform_admin=True):
+            row = self.store.connection.execute(
+                "SELECT id FROM iam_role WHERE code='MANAGER'"
+            ).fetchone()
+        self.assertIsNotNone(row)
+
+    def test_viewer_to_manager_keeps_history_audits_and_is_idempotent(self) -> None:
+        tenant = self.tenant("Synthetic role change tenant")
+        request = self.request(tenant.id, "provider|synthetic-role-change")
+        self.provision(request)
+        user_id = self.user_id(request)
+
+        dry = self.role_change(tenant.id, "VIEWER", "MANAGER", subject=request.external_subject, dry_run=True)
+        self.assertEqual((dry.action, dry.audit), ("WOULD_CHANGE", "WOULD_WRITE"))
+        self.assertEqual(self.memberships(tenant.id, user_id), [("VIEWER", "ACTIVE")])
+
+        changed = self.role_change(tenant.id, "VIEWER", "MANAGER", subject=request.external_subject)
+        self.assertEqual((changed.action, changed.audit), ("CHANGED", "WRITTEN"))
+        self.assertEqual(
+            self.memberships(tenant.id, user_id),
+            [("MANAGER", "ACTIVE"), ("VIEWER", "REVOKED")],
+        )
+        repeated = self.role_change(tenant.id, "VIEWER", "MANAGER", subject=request.external_subject)
+        self.assertEqual((repeated.action, repeated.audit), ("NO_CHANGE", "NOT_WRITTEN"))
+        with self.store.tenant_transaction(tenant.id):
+            audits = self.store.connection.execute(
+                "SELECT payload FROM audit_log WHERE event_type='IDENTITY_MEMBERSHIP_ROLE_CHANGED' AND entity_id=%s",
+                (user_id,),
+            ).fetchall()
+        self.assertEqual(len(audits), 1)
+        self.assertNotIn(request.external_subject, str(audits[0]["payload"]))
+
+        # The historical VIEWER membership is never reactivated implicitly.
+        with self.assertRaises(ProvisioningConflict):
+            self.role_change(tenant.id, "MANAGER", "VIEWER", subject=request.external_subject)
+
+    def test_role_change_is_idempotent_and_requires_existing_identity(self) -> None:
+        tenant = self.tenant("Synthetic role change mismatch tenant")
+        request = self.request(tenant.id, "provider|synthetic-role-mismatch")
+        self.provision(request)
+        self.user_id(request)
+        # Already in the requested role: idempotent, nothing written.
+        same = self.role_change(tenant.id, "MANAGER", "VIEWER", subject=request.external_subject)
+        self.assertEqual((same.action, same.audit), ("NO_CHANGE", "NOT_WRITTEN"))
+        with self.assertRaises(ProvisioningNotFound):
+            self.role_change(tenant.id, "VIEWER", "MANAGER", subject="provider|synthetic-missing")
 
 
 if __name__ == "__main__":
