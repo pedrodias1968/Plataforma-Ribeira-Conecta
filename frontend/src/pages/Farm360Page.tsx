@@ -30,14 +30,8 @@ import { BoundaryImportPanel } from "../features/property/BoundaryImportPanel";
 import { BoundaryEditorPanel } from "../features/property/BoundaryEditorPanel";
 import { DataAvailabilityPanel } from "../features/context/DataAvailabilityPanel";
 import { HydrologyPanel } from "../features/hydrology/HydrologyPanel";
-import { HarvestPanel } from "../features/harvest/HarvestPanel";
-import { FertilizationPanel } from "../features/fertilization/FertilizationPanel";
-import { CostPanel } from "../features/costs/CostPanel";
-import { SalesPanel } from "../features/sales/SalesPanel";
-import { StockPanel } from "../features/stock/StockPanel";
-import { AccountantReportPanel } from "../features/accountant/AccountantReportPanel";
-import { CorrectionsPanel } from "../features/corrections/CorrectionsPanel";
 import { formatHectares } from "../formatting";
+import "./Farm360Theme.css";
 
 interface Props {
   api: Farm360Api;
@@ -53,6 +47,7 @@ interface Props {
   canEvaluateAssets?: boolean;
   canEvaluateFields?: boolean;
   canEvaluateTemporalDelta?: boolean;
+  onOpenManagement?: (propertyId: string) => void;
 }
 type LoadState = "loading" | "ready" | "empty" | "error";
 type PartialLoadIssues = {
@@ -94,6 +89,7 @@ export function Farm360Page({
   canEvaluateAssets = false,
   canEvaluateFields = false,
   canEvaluateTemporalDelta = false,
+  onOpenManagement,
 }: Props) {
   const [state, setState] = useState<LoadState>("loading");
   const [property, setProperty] = useState<PropertyRecord | null>(null);
@@ -421,13 +417,12 @@ export function Farm360Page({
             }
           }}
         />
-        <FertilizationPanel fields={fields} tenantId={tenantId} propertyId={propertyId} apiBaseUrl={apiBaseUrl} token={token} />
-        <HarvestPanel fields={fields} tenantId={tenantId} propertyId={propertyId} apiBaseUrl={apiBaseUrl} token={token} />
-        <CostPanel fields={fields} tenantId={tenantId} propertyId={propertyId} apiBaseUrl={apiBaseUrl} token={token} />
-        <SalesPanel tenantId={tenantId} propertyId={propertyId} apiBaseUrl={apiBaseUrl} token={token} />
-        <StockPanel tenantId={tenantId} propertyId={propertyId} apiBaseUrl={apiBaseUrl} token={token} />
-        <AccountantReportPanel tenantId={tenantId} propertyId={propertyId} apiBaseUrl={apiBaseUrl} token={token} />
-        <CorrectionsPanel fields={fields} tenantId={tenantId} propertyId={propertyId} apiBaseUrl={apiBaseUrl} token={token} />
+        <section className="management-entry" aria-labelledby="management-entry-title">
+          <p className="eyebrow">Gestão da banana</p>
+          <h2 id="management-entry-title">Colheita, adubação, estoque, custos e vendas</h2>
+          <p>Os registros por talhão desta propriedade ficam numa tela própria, com espaço para tabelas e formulários.</p>
+          {onOpenManagement && <button type="button" onClick={() => onOpenManagement(propertyId)}>Abrir gestão da banana</button>}
+        </section>
         {canRunSatelliteOperations && <SceneOperationsPanel
           api={api}
           tenantId={tenantId}
