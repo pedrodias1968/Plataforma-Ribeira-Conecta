@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { BananaPlant, SceneDefs, SceneLabel } from "./EcosystemArt";
+import { BUSHES, GROUND, MOTES, PLANTS, RIDGES, RIVER, TOWER_BRACES } from "./ecosystemSceneData";
 import { StatusTag, type Status } from "./StatusTag";
 import "./EcosystemJourney.css";
 
@@ -73,39 +75,6 @@ const CHAPTERS: Chapter[] = [
   },
 ];
 
-type Plant = { x: number; y: number; s: number; bunch: boolean; delay: number };
-
-function buildPlants(): Plant[] {
-  const rows = [
-    { y: 572, s: 0.32, x0: 830, x1: 1520, step: 44 },
-    { y: 606, s: 0.38, x0: 820, x1: 1520, step: 52 },
-    { y: 640, s: 0.45, x0: 810, x1: 1540, step: 60 },
-  ];
-  const out: Plant[] = [];
-  rows.forEach((row, r) => {
-    for (let x = row.x0, i = 0; x <= row.x1; x += row.step, i += 1) {
-      out.push({
-        x,
-        y: row.y + Math.sin(x / 150) * 8,
-        s: row.s,
-        bunch: (i + r) % 3 !== 1,
-        delay: ((i * 7 + r * 3) % 10) / 4,
-      });
-    }
-  });
-  return out;
-}
-
-const PLANTS = buildPlants();
-
-const RIVER = "M-600 720 C-200 690 100 700 300 690 C480 740 560 770 760 726 S1180 640 1650 700 S2000 740 2300 700";
-
-const PARCEL_SHAPES: Array<{ points: string; fill: string }> = [
-  { points: "780,552 925,540 950,636 800,650", fill: "#5fbf6f" },
-  { points: "925,540 1080,536 1110,628 950,636", fill: "#e9c54a" },
-  { points: "1080,536 1240,550 1268,646 1110,628", fill: "#a7c957" },
-];
-
 function useMediaQuery(query: string, initial = false) {
   const [matches, setMatches] = useState(initial);
   useEffect(() => {
@@ -117,17 +86,6 @@ function useMediaQuery(query: string, initial = false) {
     return () => media.removeEventListener("change", update);
   }, [query]);
   return matches;
-}
-
-function Banana({ plant }: { plant: Plant }) {
-  return (
-    <g transform={`translate(${plant.x} ${plant.y}) scale(${plant.s})`}>
-      <g className="plant" style={{ animationDelay: `${plant.delay}s` }}>
-        <use href="#banana-leaves" />
-        {plant.bunch && <use href="#bunch" />}
-      </g>
-    </g>
-  );
 }
 
 export function EcosystemJourney({ hero }: { hero: ReactNode }) {
@@ -231,149 +189,182 @@ export function EcosystemJourney({ hero }: { hero: ReactNode }) {
           role="img"
           aria-label="Ilustração do Vale do Ribeira com bananais, rio, torre de rede e câmera de segurança"
         >
-          <defs>
-            <radialGradient id="sun" gradientUnits="userSpaceOnUse" cx="1250" cy="170" r="380">
-              <stop offset="0%" stopColor="#e9c54a" stopOpacity="0.26" />
-              <stop offset="100%" stopColor="#e9c54a" stopOpacity="0" />
-            </radialGradient>
-            <linearGradient id="ridge-far" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#1b2d22" />
-              <stop offset="100%" stopColor="#0f1a13" />
-            </linearGradient>
-            <linearGradient id="mist" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#ece8da" stopOpacity="0" />
-              <stop offset="50%" stopColor="#ece8da" stopOpacity="0.05" />
-              <stop offset="100%" stopColor="#ece8da" stopOpacity="0" />
-            </linearGradient>
-            <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#0a100c" />
-              <stop offset="100%" stopColor="#14231a" />
-            </linearGradient>
-            <pattern id="scene-hatch" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-              <line x1="0" y1="0" x2="0" y2="14" stroke="rgba(110,168,254,0.5)" strokeWidth="3" />
-            </pattern>
-            <g id="banana-leaves">
-              <path d="M-3 0 C-3 -40 -2 -70 0 -100 L5 -100 C4 -70 5 -40 4 0 Z" fill="#2a4a33" />
-              <path d="M2 -100 C-30 -122 -72 -114 -98 -86 C-62 -102 -30 -99 2 -100Z" fill="#2e7d4f" />
-              <path d="M3 -100 C36 -122 78 -114 104 -86 C68 -102 36 -99 3 -100Z" fill="#3f9560" />
-              <path d="M2 -100 C-12 -136 -32 -152 -58 -160 C-38 -136 -22 -120 2 -100Z" fill="#3f9560" />
-              <path d="M3 -100 C18 -136 38 -152 64 -160 C44 -136 28 -120 3 -100Z" fill="#2e7d4f" />
-              <path d="M2 -100 C0 -132 4 -152 14 -170 C13 -142 10 -122 3 -100Z" fill="#5fbf6f" />
-            </g>
-            <g id="bunch">
-              <path d="M4 -96 C14 -92 16 -70 10 -62 C4 -66 2 -84 4 -96Z" fill="#e9c54a" />
-              <path d="M10 -94 C20 -88 20 -68 14 -60 C10 -66 8 -82 10 -94Z" fill="#c9a62f" />
-            </g>
-          </defs>
+          <SceneDefs />
 
-          <g
-            className="world"
-            style={{ transform: `translate(${tx}px, ${ty}px) scale(${focus.scale})` }}
-          >
+          <g className="world" style={{ transform: `translate(${tx}px, ${ty}px) scale(${focus.scale})` }}>
             <rect x="-900" y="-600" width="3400" height="2400" fill="url(#sky)" />
-            <rect x="700" y="-300" width="1200" height="900" fill="url(#sun)" />
+            <rect x="600" y="-300" width="1400" height="1000" fill="url(#sun)" />
+            <circle className="sun-core" cx="1250" cy="262" r="70" fill="url(#sun-core)" />
+            <g className="rays" aria-hidden="true">
+              <path d="M1250 262 L640 900 L860 900Z" fill="url(#ray)" />
+              <path d="M1250 262 L1060 900 L1220 900Z" fill="url(#ray)" />
+            </g>
 
             <g className="layer layer-far">
-              <path d="M-900 330 L-600 320 C-200 200 300 300 460 190 S760 120 900 220 S1180 160 1300 90 S1500 150 1600 110 L2200 170 L2200 1400 L-900 1400Z" fill="url(#ridge-far)" />
-              <path d="M-600 360 C-300 300 0 340 200 290 M900 250 C1100 200 1350 210 1600 160" fill="none" stroke="rgba(236,232,218,0.07)" strokeWidth="2" />
+              <path d={RIDGES.far[0].d} fill={RIDGES.far[0].fill} />
+              <ellipse className="mist" cx="420" cy="318" rx="560" ry="38" fill="url(#mist)" />
+              <path d={RIDGES.far[1].d} fill={RIDGES.far[1].fill} />
+              <ellipse className="mist mist-slow" cx="1160" cy="372" rx="640" ry="42" fill="url(#mist)" />
             </g>
             <g className="layer layer-mid">
-              <path d="M-900 480 L-600 470 C-300 360 360 440 520 360 S800 300 960 380 S1250 320 1400 270 S1550 320 1600 300 L2200 340 L2200 1400 L-900 1400Z" fill="#14231a" />
-              <path d="M-600 450 C-200 380 120 430 300 400 M900 400 C1100 350 1300 360 1600 330" fill="none" stroke="rgba(236,232,218,0.08)" strokeWidth="2" />
-              <rect x="-900" y="400" width="3400" height="240" fill="url(#mist)" />
+              <path d={RIDGES.mid[0].d} fill={RIDGES.mid[0].fill} />
+              <ellipse className="mist" cx="760" cy="468" rx="760" ry="46" fill="url(#mist)" />
+              <path d={RIDGES.mid[1].d} fill={RIDGES.mid[1].fill} />
             </g>
+
             <g className="layer layer-near">
-              <path d="M-900 660 L-600 650 C-200 590 220 640 480 610 S800 590 1000 590 S1400 540 1600 580 L2200 600 L2200 1400 L-900 1400Z" fill="#1a2d21" />
-              <path className="river" d={RIVER} fill="none" stroke="#1f4f9c" strokeOpacity="0.62" strokeWidth="46" strokeLinecap="round" />
-              <path className="river-flow" d={RIVER} fill="none" stroke="#5b9cf0" strokeOpacity="0.55" strokeWidth="4" strokeLinecap="round" />
+              <path d={GROUND} fill="url(#ground)" />
+              <g fill="none" stroke="#000" strokeOpacity="0.18" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <path d="M806 584 Q1180 548 1566 572" />
+                <path d="M800 616 Q1180 582 1574 604" />
+                <path d="M792 648 Q1150 616 1580 636" />
+              </g>
+              {BUSHES.map((bush) => (
+                <g key={`${bush.x}-${bush.y}`} aria-hidden="true">
+                  <ellipse cx={bush.x} cy={bush.y} rx={bush.r * 1.5} ry={bush.r} fill="#17301d" />
+                  <ellipse cx={bush.x - bush.r * 0.4} cy={bush.y - bush.r * 0.35} rx={bush.r * 0.8} ry={bush.r * 0.55} fill="#21402a" opacity="0.7" />
+                </g>
+              ))}
+
+              <path d={RIVER} fill="none" stroke="#14231a" strokeOpacity="0.85" strokeWidth="74" strokeLinecap="round" />
+              <path d={RIVER} fill="none" stroke="#7fb3e0" strokeOpacity="0.35" strokeWidth="56" strokeLinecap="round" />
+              <path d={RIVER} fill="none" stroke="url(#water)" strokeWidth="50" strokeLinecap="round" />
+              <path className="river-flow" d={RIVER} fill="none" stroke="#c9e3ff" strokeOpacity="0.35" strokeWidth="2.2" strokeLinecap="round" />
+              <path className="river-glint" d={RIVER} fill="none" stroke="#f6dc86" strokeOpacity="0.45" strokeWidth="3" strokeLinecap="round" />
               <path className={`river-hi${lit === "territorio" ? " is-on" : ""}`} d={RIVER} fill="none" stroke="url(#scene-hatch)" strokeWidth="130" strokeLinecap="round" />
 
               {PLANTS.map((plant) => (
-                <Banana key={`${plant.x}-${plant.y}`} plant={plant} />
+                <BananaPlant key={`${plant.x.toFixed(1)}-${plant.y.toFixed(1)}`} plant={plant} />
               ))}
 
               {/* Território: talhões sobre o bananal. Cores ilustrativas. */}
               <g className={`parcels${lit === "territorio" ? " is-on" : ""}`} aria-hidden="true">
-                {PARCEL_SHAPES.map((shape, index) => (
-                  <polygon key={shape.points} points={shape.points} fill={shape.fill} fillOpacity="0.5" stroke="#0b110d" strokeWidth="2" style={{ transitionDelay: `${index * 80}ms` }} />
+                {[
+                  { d: "M780 553 Q852 542 925 540 Q938 588 950 636 Q876 643 800 650 Q790 600 780 553Z", fill: "#5fbf6f" },
+                  { d: "M925 540 Q1002 534 1080 536 Q1096 582 1110 628 Q1030 630 950 636 Q938 588 925 540Z", fill: "#e9c54a" },
+                  { d: "M1080 536 Q1160 540 1240 550 Q1256 598 1268 646 Q1189 637 1110 628 Q1096 582 1080 536Z", fill: "#a7c957" },
+                ].map((shape, index) => (
+                  <path key={shape.d} d={shape.d} fill={shape.fill} fillOpacity="0.42" stroke="#0b110d" strokeOpacity="0.6" strokeWidth="1.5" strokeLinejoin="round" style={{ transitionDelay: `${index * 80}ms` }} />
                 ))}
-                <polygon points="770,546 1250,538 1280,654 790,664" fill="none" stroke="#e9c54a" strokeWidth="3" strokeDasharray="12 8" strokeLinejoin="round" />
-                <text x="790" y="528" className="scene-tag">NDVI · exemplo fictício</text>
+                <path d="M768 548 Q1010 526 1250 538 Q1268 596 1282 656 Q1036 650 790 664 Q776 606 768 548Z" fill="none" stroke="#e9c54a" strokeWidth="3" strokeDasharray="12 8" strokeLinejoin="round" />
+                <SceneLabel x={900} y={516} text="NDVI · exemplo fictício" />
               </g>
 
               {/* Gestão: etiquetas de registro ao lado das plantas. */}
               <g className={`tags${lit === "gestao" ? " is-on" : ""}`} aria-hidden="true">
                 {[
-                  { x: 840, y: 480, label: "Colheita", to: [930, 570] },
-                  { x: 1010, y: 452, label: "Adubação", to: [1040, 600] },
-                  { x: 1150, y: 486, label: "Custo por kg", to: [1190, 604] },
+                  { x: 870, y: 470, label: "Colheita", to: [930, 566] },
+                  { x: 1060, y: 446, label: "Adubação", to: [1060, 590] },
+                  { x: 1240, y: 478, label: "Custo por kg", to: [1200, 600] },
                 ].map((tag, index) => (
                   <g key={tag.label} style={{ transitionDelay: `${index * 90}ms` }}>
-                    <line x1={tag.x + 60} y1={tag.y + 30} x2={tag.to[0]} y2={tag.to[1]} stroke="#e9c54a" strokeOpacity="0.6" strokeWidth="2" strokeDasharray="4 6" />
-                    <rect x={tag.x} y={tag.y} width="150" height="34" rx="6" fill="#111a14" stroke="#e9c54a" strokeOpacity="0.7" />
-                    <text x={tag.x + 75} y={tag.y + 23} textAnchor="middle" className="scene-tag">{tag.label}</text>
+                    <path d={`M${tag.x} ${tag.y + 14} Q${tag.x} ${(tag.y + tag.to[1]) / 2} ${tag.to[0]} ${tag.to[1]}`} fill="none" stroke="#e9c54a" strokeOpacity="0.7" strokeWidth="1.6" strokeDasharray="3 5" strokeLinecap="round" />
+                    <circle cx={tag.to[0]} cy={tag.to[1]} r="4" fill="#e9c54a" />
+                    <SceneLabel x={tag.x} y={tag.y} text={tag.label} />
                   </g>
                 ))}
               </g>
+
+              {MOTES.map((mote) => (
+                <circle
+                  key={`${mote.x.toFixed(0)}-${mote.y.toFixed(0)}`}
+                  className="mote"
+                  cx={mote.x}
+                  cy={mote.y}
+                  r={mote.r}
+                  style={{ animationDelay: `${mote.delay.toFixed(2)}s`, animationDuration: `${mote.dur.toFixed(2)}s` }}
+                />
+              ))}
             </g>
 
-            {/* Conectividade: torre, enlaces e Wi-Fi no galpão. */}
+            {/* Conectividade: torre treliçada, enlace e Wi-Fi no galpão. */}
             <g className={spot("conectividade")} role="button" tabIndex={0} aria-label="Conectividade rural, ver capítulo" {...spotHandlers("conectividade")}>
-              <rect x="496" y="400" width="130" height="230" fill="transparent" />
-              <g transform="translate(196 0)">
+              <rect x="496" y="390" width="130" height="250" fill="transparent" />
               <g className="rings" aria-hidden="true">
-                <circle className="ring" cx="364" cy="436" r="150" />
-                <circle className="ring" cx="364" cy="436" r="150" style={{ animationDelay: "1.1s" }} />
-                <circle className="ring" cx="364" cy="436" r="150" style={{ animationDelay: "2.2s" }} />
+                <circle className="ring" cx="560" cy="430" r="150" />
+                <circle className="ring" cx="560" cy="430" r="150" style={{ animationDelay: "1.1s" }} />
+                <circle className="ring" cx="560" cy="430" r="150" style={{ animationDelay: "2.2s" }} />
               </g>
-              <path d="M342 622 L364 442 L386 622 M350 568 L378 568 M355 526 L373 526 M359 486 L369 486 M350 568 L373 526 M378 568 L355 526 M355 526 L369 486 M373 526 L359 486" fill="none" stroke="#ece8da" strokeOpacity="0.8" strokeWidth="3" strokeLinejoin="round" />
-              <rect x="355" y="426" width="18" height="12" rx="2" fill="#ece8da" />
-              <circle cx="364" cy="420" r="5" fill="#e9c54a" />
-              </g>
-              <path className="link" d="M566 440 C620 470 690 520 742 566" fill="none" stroke="#e9c54a" strokeWidth="2.5" strokeDasharray="6 10" />
+              <ellipse cx="560" cy="628" rx="34" ry="5" fill="#000" opacity="0.35" />
+              <path d="M560 470 L498 630 M560 470 L624 630 M560 540 L484 632 M560 540 L638 632" fill="none" stroke="#dfe3d6" strokeOpacity="0.16" strokeWidth="1" />
+              <path d={TOWER_BRACES} fill="none" stroke="#b9bfae" strokeOpacity="0.85" strokeWidth="1.3" />
+              <path d="M540 624 L555 450 M580 624 L565 450" fill="none" stroke="url(#metal)" strokeWidth="3.4" strokeLinecap="round" />
+              <path d="M560 450 L560 404" stroke="#d8dccb" strokeWidth="2" strokeLinecap="round" />
+              <rect x="546" y="446" width="28" height="4" rx="2" fill="#d8dccb" />
+              <rect x="543" y="420" width="6" height="22" rx="2" fill="url(#cam-g)" />
+              <rect x="571" y="420" width="6" height="22" rx="2" fill="url(#cam-g)" />
+              <ellipse cx="560" cy="432" rx="6" ry="7" fill="url(#cam-g)" />
+              <circle className="beacon" cx="560" cy="402" r="16" fill="url(#glow)" />
+              <circle cx="560" cy="402" r="3.4" fill="#f6dc86" />
+              <path className="link" d="M566 426 C622 446 700 500 742 548" fill="none" stroke="#e9c54a" strokeWidth="2.4" strokeDasharray="6 10" strokeLinecap="round" />
               <g className="wifi" aria-hidden="true">
-                <path d="M722 546 C734 534 750 534 762 546" fill="none" stroke="#e9c54a" strokeWidth="3" strokeLinecap="round" />
-                <path d="M712 534 C730 514 754 514 772 534" fill="none" stroke="#e9c54a" strokeWidth="3" strokeLinecap="round" opacity="0.7" />
+                <path d="M729 540 C737 532 747 532 755 540" fill="none" stroke="#e9c54a" strokeWidth="2.6" strokeLinecap="round" />
+                <path d="M720 530 C733 516 751 516 764 530" fill="none" stroke="#e9c54a" strokeWidth="2.6" strokeLinecap="round" opacity="0.7" />
+                <path d="M711 520 C729 500 755 500 773 520" fill="none" stroke="#e9c54a" strokeWidth="2.6" strokeLinecap="round" opacity="0.4" />
               </g>
-              <text x="560" y="660" textAnchor="middle" className="scene-label">Conectividade</text>
+              <SceneLabel x={560} y={664} text="Conectividade" />
             </g>
 
-            {/* Galpão de beneficiamento (ponto de rede). */}
+            {/* Galpão de beneficiamento (ponto de rede), com luz acesa. */}
             <g aria-hidden="true">
-              <path d="M690 588 L742 556 L794 588Z" fill="#24352a" stroke="#ece8da" strokeOpacity="0.5" />
-              <rect x="700" y="588" width="84" height="38" fill="#1c2c22" stroke="#ece8da" strokeOpacity="0.4" />
-              <rect x="728" y="602" width="22" height="24" fill="#0b110d" />
+              <ellipse cx="742" cy="630" rx="70" ry="7" fill="#000" opacity="0.35" />
+              <ellipse className="lamp-spill" cx="742" cy="634" rx="46" ry="7" fill="#e9c54a" opacity="0.16" />
+              <path d="M698 590 L786 590 L786 628 L698 628Z" fill="url(#wall-g)" />
+              <path d="M698 590 L786 590" stroke="#000" strokeOpacity="0.35" strokeWidth="3" />
+              <path d="M680 595 L742 552 L804 595 L796 597 L742 560 L688 597Z" fill="url(#roof-g)" />
+              <path d="M690 593 L742 557 L794 593" fill="none" stroke="#c9cfc3" strokeOpacity="0.35" strokeWidth="1" />
+              <rect x="726" y="600" width="32" height="28" rx="2" fill="url(#bay-g)" />
+              <path d="M726 600 L758 600 M742 600 L742 628" stroke="#2a362c" strokeWidth="1.5" />
+              <rect x="704" y="600" width="13" height="10" rx="1.5" fill="#f6dc86" opacity="0.6" />
+              <rect x="767" y="600" width="13" height="10" rx="1.5" fill="#f6dc86" opacity="0.6" />
+              <circle cx="742" cy="604" r="20" fill="url(#glow)" opacity="0.35" />
             </g>
 
             {/* Segurança: poste, câmera e campo de visão. */}
             <g className={spot("seguranca")} role="button" tabIndex={0} aria-label="Câmeras de segurança, ver capítulo" {...spotHandlers("seguranca")}>
-              <rect x="1160" y="440" width="110" height="190" fill="transparent" />
-              <rect x="1226" y="470" width="8" height="160" fill="#2b3b30" />
+              <rect x="1160" y="440" width="110" height="200" fill="transparent" />
+              <ellipse cx="1231" cy="633" rx="12" ry="3" fill="#000" opacity="0.4" />
+              <path d="M1227 633 L1228.5 470 L1233.5 470 L1235 633Z" fill="url(#pole-g)" />
+              <rect x="1224" y="560" width="14" height="17" rx="3" fill="#36453b" stroke="#ece8da" strokeOpacity="0.2" />
+              <path d="M1236 570 C1240 580 1238 600 1236 630" fill="none" stroke="#0b110d" strokeWidth="1.4" />
               <g className="cam">
-                <polygon className="fov" points="1196,478 900,560 920,660" fill="#e9c54a" fillOpacity="0.16" stroke="#e9c54a" strokeOpacity="0.5" strokeDasharray="8 8" />
-                <rect x="1196" y="464" width="48" height="20" rx="4" fill="#24352a" stroke="#ece8da" strokeOpacity="0.8" strokeWidth="2" />
-                <circle cx="1196" cy="474" r="6" fill="#e9c54a" />
-                <circle className="rec" cx="1236" cy="470" r="3" fill="#e9c54a" />
+                <polygon className="fov" points="1196,478 900,560 920,660" fill="url(#fov-g)" stroke="#e9c54a" strokeOpacity="0.45" strokeDasharray="6 8" strokeLinejoin="round" />
+                <path d="M1231 470 L1231 486 L1224 486" fill="none" stroke="#a7ae9f" strokeWidth="3" strokeLinecap="round" />
+                <path d="M1201 466 L1238 466 Q1245 466 1245 473 L1245 480 Q1245 487 1238 487 L1207 487 Q1201 487 1201 481 Z" fill="url(#cam-g)" />
+                <path d="M1195 462 L1243 462 Q1248 462 1248 466 L1195 466 Q1193 464 1195 462Z" fill="#cdd1c6" />
+                <circle cx="1201" cy="476.5" r="8.5" fill="#1b2420" stroke="#6f776c" strokeWidth="1.2" />
+                <circle cx="1201" cy="476.5" r="5.2" fill="url(#lens-g)" />
+                <circle cx="1199.3" cy="474.6" r="1.6" fill="#ffffff" opacity="0.75" />
+                <circle className="lens-glow" cx="1201" cy="476.5" r="14" fill="url(#glow)" />
+                <circle className="rec" cx="1239" cy="471" r="1.9" fill="#e9c54a" />
               </g>
-              <text x="1230" y="662" textAnchor="middle" className="scene-label">Câmeras</text>
+              <SceneLabel x={1231} y={666} text="Câmeras" />
             </g>
 
             {/* Gestão e território: rótulos ancorados no bananal. */}
             <g className={spot("gestao")} role="button" tabIndex={0} aria-label="Gestão da banana, ver capítulo" {...spotHandlers("gestao")}>
               <rect x="800" y="548" width="740" height="120" fill="transparent" />
-              <text x="1000" y="700" textAnchor="middle" className="scene-label">Gestão da banana</text>
+              <SceneLabel x={1000} y={702} text="Gestão da banana" />
             </g>
             <g className={spot("territorio")} role="button" tabIndex={0} aria-label="Inteligência territorial, ver capítulo" {...spotHandlers("territorio")}>
-              <circle cx="1470" cy="360" r="26" fill="transparent" />
-              <circle cx="1470" cy="360" r="8" fill="#e9c54a" />
+              <circle cx="1470" cy="360" r="28" fill="transparent" />
+              <circle cx="1470" cy="360" r="18" fill="url(#glow)" opacity="0.6" />
+              <circle cx="1470" cy="360" r="6" fill="#f6dc86" />
               <circle className="ping" cx="1470" cy="360" r="8" fill="none" stroke="#e9c54a" strokeWidth="2" />
-              <text x="1470" y="402" textAnchor="middle" className="scene-label">Território</text>
+              <SceneLabel x={1470} y={398} text="Território" />
             </g>
 
             <g className="layer layer-front" aria-hidden="true">
-              <g transform="translate(1580 970) scale(1.9)"><use href="#banana-leaves" /><use href="#bunch" /></g>
+              <g className="front-plant" transform="translate(1590 978) scale(2.2)">
+                <use href="#plant-a" />
+              </g>
+              <g className="front-plant" transform="translate(1470 1018) scale(-1.7 1.7)">
+                <use href="#plant-b" />
+              </g>
             </g>
           </g>
+
+          <rect className="vignette" x="0" y="0" width="1600" height="900" fill="url(#vignette)" pointerEvents="none" />
         </svg>
 
         <p className="scene-flag">Ilustração do Vale do Ribeira · não representa uma propriedade real</p>

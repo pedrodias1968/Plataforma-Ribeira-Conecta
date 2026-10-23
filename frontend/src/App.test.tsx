@@ -12,9 +12,10 @@ describe("App site mode", () => {
     vi.stubEnv("VITE_RIBEIRA_SITE_MODE", "landing");
     const { default: App } = await import("./App");
     render(<App />);
-    expect(await screen.findByText(/ERP Especializado em Bananicultura/)).toBeInTheDocument();
+    // A landing é carregada sob demanda e tem uma cena SVG grande: a primeira importação fria pode passar de 5 s.
+    expect(await screen.findByText(/ERP Especializado em Bananicultura/, {}, { timeout: 15000 })).toBeInTheDocument();
     expect(screen.queryByText(/Configuração OIDC necessária/)).not.toBeInTheDocument();
-  });
+  }, 20000);
 
   it("keeps the authenticated app (and its config check) outside landing mode", async () => {
     vi.stubEnv("VITE_RIBEIRA_SITE_MODE", "");
