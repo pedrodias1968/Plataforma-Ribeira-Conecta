@@ -121,10 +121,11 @@ def compute_soil_derived_indices(
     if aluminum is not None and sb is not None and (sb + aluminum) > 0:
         aluminum_saturation = round((aluminum / (sb + aluminum)) * 100.0, 2)
 
+    # A missing input keeps the index unknown (None); it is never turned into zero.
     return {
-        "sum_of_bases": sb if sb is not None else 0.0,
-        "cec": cec if cec is not None else 0.0,
-        "base_saturation_percent": v_percent if v_percent is not None else 0.0,
+        "sum_of_bases": sb,
+        "cec": cec,
+        "base_saturation_percent": v_percent,
         "aluminum_saturation_percent": aluminum_saturation,
     }
 

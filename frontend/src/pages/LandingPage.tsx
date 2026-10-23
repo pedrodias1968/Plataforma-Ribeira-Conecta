@@ -10,6 +10,34 @@ import { WebGisMock } from "./WebGisMock";
 
 const CONTACT = "contato@ribeiraconecta.com.br";
 
+const SOCIAL = [
+  {
+    name: "LinkedIn",
+    href: "https://www.linkedin.com/company/ribeira-conecta",
+    icon: "M4.98 3.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5ZM3 9.5h4V21H3V9.5Zm6.5 0h3.8v1.6h.06c.53-1 1.82-2.06 3.75-2.06 4 0 4.74 2.64 4.74 6.07V21h-4v-5.2c0-1.24-.02-2.84-1.73-2.84-1.73 0-2 1.35-2 2.75V21h-4V9.5Z",
+  },
+  {
+    name: "Instagram",
+    href: "https://www.instagram.com/ribeiraconecta/",
+    icon: "M12 7.4a4.6 4.6 0 1 0 0 9.2 4.6 4.6 0 0 0 0-9.2Zm0 7.6a3 3 0 1 1 0-6 3 3 0 0 1 0 6Zm4.8-8.9a1.08 1.08 0 1 1 0 2.16 1.08 1.08 0 0 1 0-2.16ZM12 3.5c-2.3 0-2.6 0-3.5.05-3.1.14-4.8 1.86-4.95 4.95C3.5 9.4 3.5 9.7 3.5 12s0 2.6.05 3.5c.14 3.1 1.86 4.8 4.95 4.95.9.04 1.2.05 3.5.05s2.6 0 3.5-.05c3.1-.14 4.8-1.86 4.95-4.95.04-.9.05-1.2.05-3.5s0-2.6-.05-3.5c-.14-3.1-1.86-4.8-4.95-4.95-.9-.04-1.2-.05-3.5-.05Zm0 1.55c2.27 0 2.54 0 3.43.05 2.3.1 3.37 1.2 3.47 3.47.04.9.05 1.16.05 3.43s0 2.54-.05 3.43c-.1 2.26-1.17 3.37-3.47 3.47-.9.04-1.16.05-3.43.05s-2.54 0-3.43-.05c-2.3-.1-3.37-1.21-3.47-3.47C5.06 14.54 5.05 14.27 5.05 12s0-2.54.05-3.43c.1-2.27 1.18-3.37 3.47-3.47.89-.04 1.16-.05 3.43-.05Z",
+  },
+] as const;
+
+function SocialLinks({ className }: { className?: string }) {
+  return (
+    <ul className={`social${className ? ` ${className}` : ""}`} aria-label="Redes sociais">
+      {SOCIAL.map((item) => (
+        <li key={item.name}>
+          <a href={item.href} target="_blank" rel="noopener noreferrer" aria-label={`Ribeira Conecta no ${item.name} (abre em nova aba)`}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d={item.icon} fill="currentColor" /></svg>
+            <span>{item.name}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 const LAYER_ROWS: Array<{ name: string; text: string; status: Status }> = [
   { name: "Propriedade e talhões", text: "Limite desenhado ou importado (GeoJSON, KML/KMZ), com histórico de cada alteração.", status: "ready" },
   { name: "Vegetação por satélite", text: "NDVI por talhão a partir do Sentinel-2, com máscara de nuvens e comparação entre datas.", status: "ready" },
@@ -304,6 +332,7 @@ export function LandingPage() {
               <h2>Converse com nossa equipe.</h2>
               <p className="muted">Demonstração, parceria ou dúvida: escolha o seu perfil e escreva.</p>
               <a className="text-link mono" href={`mailto:${CONTACT}`}>{CONTACT}</a>
+              <SocialLinks className="social-contact" />
             </div>
             <form className="form" onSubmit={handleContact}>
               <label>
@@ -341,6 +370,7 @@ export function LandingPage() {
         <div className="wrap footer-inner">
           <span className="brand-plain">Ribeira Conecta</span>
           <span className="muted">Ecossistema digital para a cadeia da banana.</span>
+          <SocialLinks />
           <span className="muted mono">© 2026 Ribeira Conecta</span>
         </div>
       </footer>

@@ -73,11 +73,21 @@ class SoilUnitTest(unittest.TestCase):
         self.assertAlmostEqual(result["base_saturation_percent"], 65.71, places=2)
 
     def test_soil_derived_indices_missing_values(self) -> None:
-        # Missing values default to zero
+        # Missing inputs keep every index unknown: never zero.
         result = compute_soil_derived_indices()
-        self.assertEqual(result["sum_of_bases"], 0.0)
-        self.assertEqual(result["cec"], 0.0)
-        self.assertEqual(result["base_saturation_percent"], 0.0)
+        self.assertIsNone(result["sum_of_bases"])
+        self.assertIsNone(result["cec"])
+        self.assertIsNone(result["base_saturation_percent"])
+        self.assertIsNone(result["aluminum_saturation_percent"])
+        # Partial bases (no K) keep SB, CTC and V% unknown even with H+Al.
+        partial = compute_soil_derived_indices(calcium=2.0, magnesium=1.0, h_al=2.0)
+        self.assertIsNone(partial["sum_of_bases"])
+        self.assertIsNone(partial["cec"])
+        self.assertIsNone(partial["base_saturation_percent"])
+        # A CTC reported by the laboratory is kept as reported.
+        reported = compute_soil_derived_indices(explicit_cec=8.4)
+        self.assertEqual(reported["cec"], 8.4)
+        self.assertIsNone(reported["base_saturation_percent"])
 
     def test_soil_sample_location_validation(self) -> None:
         valid_point = {"type": "Point", "coordinates": [-46.99, -24.01]}

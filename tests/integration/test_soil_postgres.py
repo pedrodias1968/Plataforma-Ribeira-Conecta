@@ -56,11 +56,13 @@ class SoilPostgresTests(unittest.TestCase):
             boundary_source="MANUAL_FIELD_SURVEY",
         )
 
-        field_a = self.application.fields.create_field(
+        field_a = self.application.fields.create(
             tenant_a.id,
             property_id=prop_a.id,
             name="Talhão A1",
+            status="ACTIVE",
             geometry_geojson=self.polygon(-46.995, -24.015, -46.985, -24.005),
+            geometry_crs="EPSG:4326",
             source_reference="FIELD_SURVEY_GPS",
             observed_at="2026-09-20T10:00:00+00:00",
             classification=DataClassification.MANUAL_CONFIRMED,
@@ -140,21 +142,25 @@ class SoilPostgresTests(unittest.TestCase):
             geometry_crs="EPSG:4326",
             boundary_source="MANUAL_FIELD_SURVEY",
         )
-        field_a = self.application.fields.create_field(
+        field_a = self.application.fields.create(
             tenant_a.id,
             property_id=prop_a.id,
             name="Talhão Query A",
+            status="ACTIVE",
             geometry_geojson=self.polygon(-47.095, -24.115, -47.085, -24.105),
+            geometry_crs="EPSG:4326",
             source_reference="FIELD_SURVEY_GPS",
             observed_at="2026-09-20T10:00:00+00:00",
             classification=DataClassification.MANUAL_CONFIRMED,
             actor="agronomist@test.local",
         )
-        field_b = self.application.fields.create_field(
+        field_b = self.application.fields.create(
             tenant_a.id,
             property_id=prop_a.id,
             name="Talhão Query B",
+            status="ACTIVE",
             geometry_geojson=self.polygon(-47.099, -24.119, -47.091, -24.111),
+            geometry_crs="EPSG:4326",
             source_reference="FIELD_SURVEY_GPS",
             observed_at="2026-09-20T10:00:00+00:00",
             classification=DataClassification.MANUAL_CONFIRMED,
@@ -209,11 +215,13 @@ class SoilPostgresTests(unittest.TestCase):
             geometry_crs="EPSG:4326",
             boundary_source="MANUAL_FIELD_SURVEY",
         )
-        field_a = self.application.fields.create_field(
+        field_a = self.application.fields.create(
             tenant_a.id,
             property_id=prop_a.id,
             name="Talhão Lab A1",
+            status="ACTIVE",
             geometry_geojson=self.polygon(-47.195, -24.215, -47.185, -24.205),
+            geometry_crs="EPSG:4326",
             source_reference="FIELD_SURVEY_GPS",
             observed_at="2026-09-20T10:00:00+00:00",
             classification=DataClassification.MANUAL_CONFIRMED,
@@ -236,52 +244,34 @@ class SoilPostgresTests(unittest.TestCase):
         self.application.register_soil_lab_analysis(
             tenant_a.id,
             sample_a.id,
-            ph_water=5.6,
+            lab_name="Lab Teste S.A.",
+            report_number="LAB-A-001",
+            report_date="2026-09-25",
+            ph_h2o=5.6,
             ph_cacl2=4.9,
-            ho3p=12.5,
-            k=1.8,
-            ca=4.5,
-            mg=2.1,
-            al=0.0,
-            h_al=1.8,
-            ctc_ph7=10.0,
-            ctc_ph7_1=8.2,
-            v_percent=78.0,
-            summary={
-                "aluminum_saturation_percent": 22.0,
-                "base_saturation_percent": 78.0,
-            },
-            analysis_date="2026-09-25T14:00:00+00:00",
-            laboratory="Lab Teste S.A.",
-            analysis_method="EMBRAPA",
+            phosphorus_mg_dm3=12.5,
+            potassium_cmolc_dm3=0.18,
+            calcium_cmolc_dm3=4.5,
+            magnesium_cmolc_dm3=2.1,
+            aluminum_cmolc_dm3=0.0,
+            potential_acidity_h_al=1.8,
+            classification=DataClassification.MANUAL_CONFIRMED,
             actor="lab@test.local",
         )
         analyses_tenant_b = self.application.soil.list_lab_analyses(
             tenant_b.id, sample_a.id
         )
         self.assertEqual(len(analyses_tenant_b), 0)
-        with self.assertRaises(SoilValidationError):
+        # Tenant B cannot attach a laboratory report to tenant A's sample.
+        with self.assertRaises(LookupError):
             self.application.register_soil_lab_analysis(
                 tenant_b.id,
                 sample_a.id,
-                ph_water=6.0,
-                ph_cacl2=5.3,
-                ho3p=10.0,
-                k=1.5,
-                ca=4.0,
-                mg=2.0,
-                al=0.0,
-                h_al=2.0,
-                ctc_ph7=10.0,
-                ctc_ph7_1=8.0,
-                v_percent=80.0,
-                summary={
-                    "aluminum_saturation_percent": 20.0,
-                    "base_saturation_percent": 80.0,
-                },
-                analysis_date="2026-09-26T14:00:00+00:00",
-                laboratory="Lab Teste S.A.",
-                analysis_method="EMBRAPA",
+                lab_name="Lab Teste S.A.",
+                report_number="LAB-B-001",
+                report_date="2026-09-26",
+                ph_h2o=6.0,
+                classification=DataClassification.MANUAL_CONFIRMED,
                 actor="lab@test.local",
             )
 
@@ -301,21 +291,25 @@ class SoilPostgresTests(unittest.TestCase):
             geometry_crs="EPSG:4326",
             boundary_source="MANUAL_FIELD_SURVEY",
         )
-        field_a = self.application.fields.create_field(
+        field_a = self.application.fields.create(
             tenant_a.id,
             property_id=prop_a.id,
             name="Talhão Cross A1",
+            status="ACTIVE",
             geometry_geojson=self.polygon(-47.295, -24.315, -47.285, -24.305),
+            geometry_crs="EPSG:4326",
             source_reference="FIELD_SURVEY_GPS",
             observed_at="2026-09-20T10:00:00+00:00",
             classification=DataClassification.MANUAL_CONFIRMED,
             actor="agronomist@test.local",
         )
-        field_b = self.application.fields.create_field(
+        field_b = self.application.fields.create(
             tenant_a.id,
             property_id=prop_b.id,
             name="Talhão Cross B1",
+            status="ACTIVE",
             geometry_geojson=self.polygon(-47.395, -24.415, -47.385, -24.405),
+            geometry_crs="EPSG:4326",
             source_reference="FIELD_SURVEY_GPS",
             observed_at="2026-09-20T10:00:00+00:00",
             classification=DataClassification.MANUAL_CONFIRMED,
@@ -424,11 +418,13 @@ class SoilPostgresTests(unittest.TestCase):
             geometry_crs="EPSG:4326",
             boundary_source="MANUAL_FIELD_SURVEY",
         )
-        field_a = self.application.fields.create_field(
+        field_a = self.application.fields.create(
             tenant_a.id,
             property_id=prop_a.id,
             name="Talhão Edge A1",
+            status="ACTIVE",
             geometry_geojson=self.polygon(-47.595, -24.615, -47.585, -24.605),
+            geometry_crs="EPSG:4326",
             source_reference="FIELD_SURVEY_GPS",
             observed_at="2026-09-20T10:00:00+00:00",
             classification=DataClassification.MANUAL_CONFIRMED,
