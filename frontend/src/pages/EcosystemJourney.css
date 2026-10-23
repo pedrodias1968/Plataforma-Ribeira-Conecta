@@ -247,6 +247,52 @@
   transform: none;
 }
 
+/* Satélite (inteligência territorial) */
+.sat-float {
+  animation: sat-float 6s ease-in-out infinite alternate;
+}
+
+.sat-beam {
+  opacity: 0;
+  transition: opacity 420ms var(--ease-out);
+}
+
+.sat-scan {
+  opacity: 0;
+  transition: opacity 420ms var(--ease-out);
+}
+
+.spot.is-on .sat-beam {
+  opacity: 1;
+}
+
+.spot.is-on .sat-scan {
+  opacity: 1;
+  animation: scene-dash 1.6s linear infinite;
+}
+
+.sat-led {
+  animation: scene-blink 1.8s ease-in-out infinite;
+}
+
+/* Fora da primeira tela, só o rótulo do ponto em destaque aparece. */
+.journey.is-zoomed .spot:not(.is-on) .scene-label {
+  opacity: 0;
+}
+
+.journey .spot .scene-label {
+  transition: opacity 300ms var(--ease-out);
+}
+
+@keyframes sat-float {
+  from {
+    transform: translate(0, -4px) rotate(-3deg);
+  }
+  to {
+    transform: translate(0, 4px) rotate(3deg);
+  }
+}
+
 .ping {
   transform-box: fill-box;
   transform-origin: center;
@@ -518,6 +564,11 @@
 }
 
 @media (max-width: 960px) {
+  /* Na primeira tela do celular os rótulos ficariam ilegíveis; o trilho já nomeia cada ponto. */
+  .journey:not(.is-zoomed) .scene-label {
+    opacity: 0;
+  }
+
   .journey-stage {
     height: 46svh;
   }
@@ -594,7 +645,10 @@
   .spot.is-on .link,
   .spot.is-on .wifi,
   .spot.is-on .cam,
-  .spot.is-on .rec {
+  .spot.is-on .rec,
+  .sat-float,
+  .sat-led,
+  .spot.is-on .sat-scan {
     animation: none;
   }
 
