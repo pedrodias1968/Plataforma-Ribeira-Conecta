@@ -9,6 +9,7 @@ import {
 } from "../../api/soil";
 import type { FieldContext } from "../../types/farm360";
 import { LAB_FIELDS, NUMBER, formatDate, parseOptional, todayIso, valueLabel } from "./labels";
+import { SamplingPreview } from "./SamplingPreview";
 
 export function SoilPanel({ fields, tenantId, propertyId, apiBaseUrl, token, api: injectedApi }: {
   fields: FieldContext[];
@@ -264,6 +265,7 @@ export function SoilPanel({ fields, tenantId, propertyId, apiBaseUrl, token, api
           </fieldset>
         </form>
       )}
+      <SamplingPreview fields={fields} tenantId={tenantId} propertyId={propertyId} api={api} />
     </section>
   );
 }
