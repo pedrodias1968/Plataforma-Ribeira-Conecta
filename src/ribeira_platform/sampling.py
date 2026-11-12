@@ -14,9 +14,12 @@ from dataclasses import dataclass, field, replace
 from typing import Any
 
 from pyproj import CRS, Transformer
+from pyproj.aoi import AreaOfInterest
+from pyproj.database import query_utm_crs_info
 from pyproj.exceptions import CRSError
 from shapely.errors import GEOSException
-from shapely.geometry import Point, shape
+from shapely.geometry import Point, mapping, shape
+from shapely.ops import transform
 from shapely.validation import explain_validity
 
 from .epistemology import DataClassification
@@ -382,6 +385,117 @@ def reproject_sample_points(
         )
 
     return tuple(reprojected)
+
+
+def sirgas2000_utm_crs_for(geometry_lonlat: dict[str, Any]) -> str:
+    """Select the SIRGAS 2000 UTM CRS covering a lon/lat geometry.
+
+    Evidence First: the CRS is chosen deterministically from the geometry's
+    centroid using pyproj's official SIRGAS 2000 UTM database. If no UTM zone
+    covers the centroid (outside SIRGAS 2000 coverage) a
+    ``SamplingValidationError`` is raised; when more than one CRS matches, the
+    lowest EPSG code is chosen so the result is reproducible.
+    """
+    if not isinstance(geometry_lonlat, dict):
+        raise SamplingValidationError("geometry_lonlat must be a dict")
+
+    try:
+        geometry = shape(geometry_lonlat)
+    except (GEOSException, ValueError, TypeError) as exc:
+        raise SamplingValidationError(f"invalid geometry: {exc}") from exc
+
+    if geometry.is_empty:
+        raise SamplingValidationError("geometry must not be empty")
+
+    centroid = geometry.centroid
+    area_of_interest = AreaOfInterest(
+        centroid.x, centroid.y, centroid.x, centroid.y
+    )
+    candidates = query_utm_crs_info(
+        datum_name="SIRGAS 2000", area_of_interest=area_of_interest
+    )
+    if not candidates:
+        raise SamplingValidationError(
+            "geometry is outside SIRGAS 2000 UTM coverage"
+        )
+
+    chosen = min(candidates, key=lambda info: int(info.code))
+    return f"EPSG:{chosen.code}"
+
+
+def suggest_grid_sample_points_for_lonlat_field(
+    field_id: str,
+    field_geometry_lonlat: dict[str, Any],
+    spacing_m: float,
+    generated_at: str | None = None,
+    *,
+    max_points: int = 10000,
+) -> tuple[str, tuple[SuggestedSamplePoint, ...]]:
+    """Suggest a metric grid for a lon/lat (EPSG:4326) field polygon.
+
+    Evidence First: talhões are stored in EPSG:4326, but a metric grid requires a
+    projected CRS in metres. This helper validates the lon/lat polygon, selects
+    the SIRGAS 2000 UTM CRS covering it, projects the polygon, runs the regular
+    grid and reprojects the resulting DERIVED_LOCATION points back to EPSG:4326.
+
+    It returns ``(crs_usado, points)`` where ``crs_usado`` is the projected CRS
+    actually used (e.g. ``"EPSG:31983"``). No measurement or agronomic rule is
+    introduced.
+    """
+    if not isinstance(field_geometry_lonlat, dict):
+        raise SamplingValidationError("field_geometry_lonlat must be a dict")
+
+    geometry_type = field_geometry_lonlat.get("type")
+    if geometry_type not in _ALLOWED_ZONE_TYPES:
+        raise SamplingValidationError(
+            "field_geometry_lonlat type must be 'Polygon' or 'MultiPolygon'"
+        )
+
+    if not field_geometry_lonlat.get("coordinates"):
+        raise SamplingValidationError(
+            "field_geometry_lonlat coordinates must not be empty"
+        )
+
+    try:
+        polygon_lonlat = shape(field_geometry_lonlat)
+    except (GEOSException, ValueError, TypeError) as exc:
+        raise SamplingValidationError(
+            f"invalid field_geometry_lonlat: {exc}"
+        ) from exc
+
+    if polygon_lonlat.is_empty:
+        raise SamplingValidationError("field_geometry_lonlat must not be empty")
+
+    _reject_if_invalid(polygon_lonlat, "field_geometry_lonlat")
+
+    min_lon, min_lat, max_lon, max_lat = polygon_lonlat.bounds
+    if not (-180.0 <= min_lon and max_lon <= 180.0):
+        raise SamplingValidationError(
+            "field_geometry_lonlat longitude must be within [-180, 180]"
+        )
+    if not (-90.0 <= min_lat and max_lat <= 90.0):
+        raise SamplingValidationError(
+            "field_geometry_lonlat latitude must be within [-90, 90]"
+        )
+
+    crs_usado = sirgas2000_utm_crs_for(field_geometry_lonlat)
+
+    transformer = Transformer.from_crs("EPSG:4326", crs_usado, always_xy=True)
+    polygon_projected = transform(transformer.transform, polygon_lonlat)
+
+    projected_points = suggest_grid_sample_points(
+        field_id,
+        mapping(polygon_projected),
+        crs_usado,
+        spacing_m,
+        generated_at,
+        max_points=max_points,
+    )
+
+    points_lonlat = reproject_sample_points(
+        projected_points, crs_usado, "EPSG:4326"
+    )
+    return crs_usado, points_lonlat
 
 
 _CONFIRM_NAMESPACE = uuid.UUID("a1c4e7b2-3d5f-4a6b-8c9d-0e1f2a3b4c5d")

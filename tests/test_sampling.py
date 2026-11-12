@@ -23,7 +23,9 @@ from ribeira_platform.sampling import (
     confirm_sample_location,
     reproject_sample_points,
     sample_points_to_feature_collection,
+    sirgas2000_utm_crs_for,
     suggest_grid_sample_points,
+    suggest_grid_sample_points_for_lonlat_field,
     suggest_zone_sample_points,
     validate_management_zone,
     zones_to_feature_collection,
@@ -893,4 +895,119 @@ class ReprojectSamplePointsTest(unittest.TestCase):
         with self.assertRaises(SamplingValidationError):
             reproject_sample_points(
                 [original], self.PROJECTED_CRS, self.GEOGRAPHIC_CRS
+            )
+
+
+class LonLatGridSamplingTest(unittest.TestCase):
+    """Lon/lat field polygons are projected before building a metric grid.
+
+    Evidence First: the field is stored in EPSG:4326 while the grid needs a
+    projected CRS in metres. These tests build the reference square in
+    EPSG:31983 (Vale do Ribeira), convert its corners to lon/lat with pyproj
+    inside the test and verify the round-trip behaviour.
+    """
+
+    CENTER_LON = -47.9
+    CENTER_LAT = -24.5
+    UTM_CRS = "EPSG:31983"
+
+    def _lonlat_square_from_metres(self, size_m: float = 200.0) -> dict:
+        to_utm = Transformer.from_crs(
+            "EPSG:4326", self.UTM_CRS, always_xy=True
+        )
+        cx, cy = to_utm.transform(self.CENTER_LON, self.CENTER_LAT)
+        half = size_m / 2.0
+        corners_utm = [
+            (cx - half, cy - half),
+            (cx + half, cy - half),
+            (cx + half, cy + half),
+            (cx - half, cy + half),
+            (cx - half, cy - half),
+        ]
+        to_lonlat = Transformer.from_crs(
+            self.UTM_CRS, "EPSG:4326", always_xy=True
+        )
+        ring = [list(to_lonlat.transform(x, y)) for x, y in corners_utm]
+        return {"type": "Polygon", "coordinates": [ring]}
+
+    def test_crs_is_sirgas2000_utm_zone_23s(self) -> None:
+        polygon = self._lonlat_square_from_metres()
+        crs = sirgas2000_utm_crs_for(polygon)
+        self.assertEqual(crs, "EPSG:31983")
+
+    def test_grid_spacing_50_yields_16_points(self) -> None:
+        polygon = self._lonlat_square_from_metres()
+        crs, points = suggest_grid_sample_points_for_lonlat_field(
+            "field-1", polygon, 50.0
+        )
+        self.assertEqual(crs, "EPSG:31983")
+        self.assertEqual(len(points), 16)
+
+    def test_all_points_inside_field_and_valid_lonlat(self) -> None:
+        polygon = self._lonlat_square_from_metres()
+        field = shape(polygon)
+        _, points = suggest_grid_sample_points_for_lonlat_field(
+            "field-1", polygon, 50.0
+        )
+        for point in points:
+            lon, lat = point.geometry["coordinates"]
+            self.assertTrue(-180.0 <= lon <= 180.0)
+            self.assertTrue(-90.0 <= lat <= 90.0)
+            self.assertTrue(field.contains(Point(lon, lat)))
+
+    def test_deterministic_output(self) -> None:
+        polygon = self._lonlat_square_from_metres()
+        first = suggest_grid_sample_points_for_lonlat_field(
+            "field-1", polygon, 50.0, generated_at="2026-01-01T00:00:00+00:00"
+        )
+        second = suggest_grid_sample_points_for_lonlat_field(
+            "field-1", polygon, 50.0, generated_at="2026-01-01T00:00:00+00:00"
+        )
+        self.assertEqual(first, second)
+
+    def test_rejects_geometry_outside_coverage(self) -> None:
+        outside = {
+            "type": "Polygon",
+            "coordinates": [
+                [[10.0, 50.0], [10.001, 50.0], [10.001, 50.001],
+                 [10.0, 50.001], [10.0, 50.0]]
+            ],
+        }
+        with self.assertRaises(SamplingValidationError):
+            sirgas2000_utm_crs_for(outside)
+        with self.assertRaises(SamplingValidationError):
+            suggest_grid_sample_points_for_lonlat_field(
+                "field-1", outside, 50.0
+            )
+
+    def test_rejects_invalid_geometry(self) -> None:
+        bowtie = {
+            "type": "Polygon",
+            "coordinates": [
+                [[0.0, 0.0], [1.0, 1.0], [1.0, 0.0], [0.0, 1.0], [0.0, 0.0]]
+            ],
+        }
+        with self.assertRaises(SamplingValidationError):
+            suggest_grid_sample_points_for_lonlat_field(
+                "field-1", bowtie, 50.0
+            )
+
+    def test_rejects_out_of_range_lonlat(self) -> None:
+        out_of_range = {
+            "type": "Polygon",
+            "coordinates": [
+                [[200.0, -24.5], [200.001, -24.5], [200.001, -24.499],
+                 [200.0, -24.499], [200.0, -24.5]]
+            ],
+        }
+        with self.assertRaises(SamplingValidationError):
+            suggest_grid_sample_points_for_lonlat_field(
+                "field-1", out_of_range, 50.0
+            )
+
+    def test_max_points_is_respected(self) -> None:
+        polygon = self._lonlat_square_from_metres()
+        with self.assertRaises(SamplingValidationError):
+            suggest_grid_sample_points_for_lonlat_field(
+                "field-1", polygon, 1.0, max_points=16
             )
