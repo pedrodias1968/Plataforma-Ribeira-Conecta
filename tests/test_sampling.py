@@ -63,6 +63,11 @@ MULTIPOLYGON_GEOJSON = {
 
 POINT_GEOJSON = {"type": "Point", "coordinates": [-46.99, -24.01]}
 
+BOWTIE_GEOJSON = {
+    "type": "Polygon",
+    "coordinates": [[[0.0, 0.0], [10.0, 10.0], [10.0, 0.0], [0.0, 10.0], [0.0, 0.0]]],
+}
+
 
 class ValidateManagementZoneTest(unittest.TestCase):
     def test_accepts_valid_polygon(self) -> None:
@@ -100,6 +105,11 @@ class ValidateManagementZoneTest(unittest.TestCase):
                 "METHOD",
                 ("dem",),
             )
+
+    def test_rejects_self_intersecting_bowtie(self) -> None:
+        with self.assertRaises(SamplingValidationError) as ctx:
+            validate_management_zone(BOWTIE_GEOJSON, "METHOD", ("dem",))
+        self.assertIn("invalid", str(ctx.exception).lower())
 
     def test_rejects_empty_derivation_method(self) -> None:
         with self.assertRaises(SamplingValidationError):
@@ -292,6 +302,32 @@ class SuggestGridSamplePointsTest(unittest.TestCase):
         ids = [p.point_id for p in points]
         self.assertEqual(len(ids), len(set(ids)))
 
+    def test_rejects_self_intersecting_bowtie(self) -> None:
+        with self.assertRaises(SamplingValidationError) as ctx:
+            suggest_grid_sample_points(
+                "field-1", BOWTIE_GEOJSON, PROJECTED_CRS, 1.0
+            )
+        self.assertIn("invalid", str(ctx.exception).lower())
+
+    def test_rejects_grid_exceeding_default_max_points(self) -> None:
+        with self.assertRaises(SamplingValidationError) as ctx:
+            suggest_grid_sample_points(
+                "field-1", SQUARE_METRES_GEOJSON, PROJECTED_CRS, 0.5
+            )
+        self.assertIn("max_points", str(ctx.exception))
+
+    def test_accepts_grid_within_custom_max_points(self) -> None:
+        points = suggest_grid_sample_points(
+            "field-1", SQUARE_METRES_GEOJSON, PROJECTED_CRS, 25.0, max_points=100
+        )
+        self.assertEqual(len(points), 16)
+
+    def test_rejects_non_positive_max_points(self) -> None:
+        with self.assertRaises(SamplingValidationError):
+            suggest_grid_sample_points(
+                "field-1", SQUARE_METRES_GEOJSON, PROJECTED_CRS, 25.0, max_points=0
+            )
+
 
 class ConfirmSampleLocationTest(unittest.TestCase):
     def _suggestion(self) -> SuggestedSamplePoint:
@@ -362,6 +398,11 @@ class ConfirmSampleLocationTest(unittest.TestCase):
                 adjusted_geometry={"type": "Point", "coordinates": [500.0, 500.0]},
                 adjustment_note="outside",
             )
+
+    def test_rejects_self_intersecting_bowtie_field(self) -> None:
+        with self.assertRaises(SamplingValidationError) as ctx:
+            confirm_sample_location(self._suggestion(), BOWTIE_GEOJSON, "tech-1")
+        self.assertIn("invalid", str(ctx.exception).lower())
 
     def test_rejects_adjustment_without_note(self) -> None:
         with self.assertRaises(SamplingValidationError):

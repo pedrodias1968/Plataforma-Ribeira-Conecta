@@ -15,6 +15,7 @@ from typing import Any
 from pyproj import CRS
 from shapely.errors import GEOSException
 from shapely.geometry import Point, shape
+from shapely.validation import explain_validity
 
 from .epistemology import DataClassification
 from .models import now_utc
@@ -28,6 +29,19 @@ _GRID_DERIVATION_METHOD = "REGULAR_GRID"
 
 class SamplingValidationError(ValueError):
     pass
+
+
+def _reject_if_invalid(geom, label: str) -> None:
+    """Reject topologically invalid geometry without silently repairing it.
+
+    Evidence First: an invalid geometry (e.g. a self-intersecting "bow-tie"
+    polygon) is rejected explicitly. The caller's geometry is never silently
+    repaired or mutated.
+    """
+    if not geom.is_valid:
+        raise SamplingValidationError(
+            f"{label} is invalid: {explain_validity(geom)}"
+        )
 
 
 @dataclass(frozen=True)
@@ -99,6 +113,8 @@ def validate_management_zone(
     if zone_shape.is_empty:
         raise SamplingValidationError("geometry must not be empty")
 
+    _reject_if_invalid(zone_shape, "geometry")
+
     if not isinstance(derivation_method, str) or not derivation_method.strip():
         raise SamplingValidationError("derivation_method must not be empty")
 
@@ -130,6 +146,8 @@ def suggest_grid_sample_points(
     crs: CRS | object | None,
     spacing_m: float,
     generated_at: str | None = None,
+    *,
+    max_points: int = 10000,
 ) -> tuple[SuggestedSamplePoint, ...]:
     """Suggest soil sample points on a deterministic regular grid.
 
@@ -170,8 +188,22 @@ def suggest_grid_sample_points(
     if polygon.is_empty:
         raise SamplingValidationError("field_geometry must not be empty")
 
+    _reject_if_invalid(polygon, "field_geometry")
+
+    if not isinstance(max_points, int) or isinstance(max_points, bool):
+        raise SamplingValidationError("max_points must be an integer")
+    if max_points <= 0:
+        raise SamplingValidationError("max_points must be greater than zero")
+
     min_x, min_y, max_x, max_y = polygon.bounds
     half = spacing_m / 2.0
+
+    estimated_cells = ((max_x - min_x) / spacing_m) * ((max_y - min_y) / spacing_m)
+    if estimated_cells > max_points:
+        raise SamplingValidationError(
+            "grid would generate too many sample points: estimated "
+            f"{int(estimated_cells)} cells exceeds max_points={max_points}"
+        )
 
     coordinates: list[tuple[float, float]] = []
     y = min_y + half
@@ -263,6 +295,7 @@ def _validate_field_polygon(field_geometry: dict[str, Any]):
         raise SamplingValidationError(f"invalid field_geometry: {exc}") from exc
     if polygon.is_empty:
         raise SamplingValidationError("field_geometry must not be empty")
+    _reject_if_invalid(polygon, "field_geometry")
     return polygon
 
 
