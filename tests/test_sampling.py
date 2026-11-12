@@ -14,9 +14,22 @@ from ribeira_platform.sampling import (
     ManagementZone,
     SamplingValidationError,
     SuggestedSamplePoint,
+    suggest_grid_sample_points,
     validate_management_zone,
 )
 
+
+PROJECTED_CRS = "EPSG:31983"
+
+SQUARE_METRES_GEOJSON = {
+    "type": "Polygon",
+    "coordinates": [[[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0], [0.0, 0.0]]],
+}
+
+SMALL_SQUARE_METRES_GEOJSON = {
+    "type": "Polygon",
+    "coordinates": [[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]]],
+}
 
 POLYGON_GEOJSON = {
     "type": "Polygon",
@@ -193,6 +206,89 @@ class FrozenModelTest(unittest.TestCase):
 class ExceptionHierarchyTest(unittest.TestCase):
     def test_sampling_validation_error_is_value_error(self) -> None:
         self.assertTrue(issubclass(SamplingValidationError, ValueError))
+
+
+class SuggestGridSamplePointsTest(unittest.TestCase):
+    def test_known_square_yields_expected_count(self) -> None:
+        points = suggest_grid_sample_points(
+            "field-1", SQUARE_METRES_GEOJSON, PROJECTED_CRS, 25.0
+        )
+        self.assertEqual(len(points), 16)
+
+    def test_small_polygon_yields_single_fallback_point(self) -> None:
+        points = suggest_grid_sample_points(
+            "field-1", SMALL_SQUARE_METRES_GEOJSON, PROJECTED_CRS, 25.0
+        )
+        self.assertEqual(len(points), 1)
+        x, y = points[0].geometry["coordinates"]
+        self.assertTrue(0.0 <= x <= 10.0)
+        self.assertTrue(0.0 <= y <= 10.0)
+
+    def test_rejects_geographic_crs(self) -> None:
+        with self.assertRaises(SamplingValidationError):
+            suggest_grid_sample_points(
+                "field-1", POLYGON_GEOJSON, "EPSG:4326", 25.0
+            )
+
+    def test_rejects_missing_crs(self) -> None:
+        with self.assertRaises(SamplingValidationError):
+            suggest_grid_sample_points(
+                "field-1", SQUARE_METRES_GEOJSON, None, 25.0
+            )
+
+    def test_rejects_zero_spacing(self) -> None:
+        with self.assertRaises(SamplingValidationError):
+            suggest_grid_sample_points(
+                "field-1", SQUARE_METRES_GEOJSON, PROJECTED_CRS, 0.0
+            )
+
+    def test_rejects_negative_spacing(self) -> None:
+        with self.assertRaises(SamplingValidationError):
+            suggest_grid_sample_points(
+                "field-1", SQUARE_METRES_GEOJSON, PROJECTED_CRS, -5.0
+            )
+
+    def test_same_input_yields_same_output(self) -> None:
+        first = suggest_grid_sample_points(
+            "field-1", SQUARE_METRES_GEOJSON, PROJECTED_CRS, 25.0,
+            generated_at="2026-01-01T00:00:00Z",
+        )
+        second = suggest_grid_sample_points(
+            "field-1", SQUARE_METRES_GEOJSON, PROJECTED_CRS, 25.0,
+            generated_at="2026-01-01T00:00:00Z",
+        )
+        self.assertEqual(
+            tuple(p.point_id for p in first),
+            tuple(p.point_id for p in second),
+        )
+
+    def test_all_points_inside_polygon(self) -> None:
+        from shapely.geometry import Point, shape
+
+        polygon = shape(SQUARE_METRES_GEOJSON)
+        points = suggest_grid_sample_points(
+            "field-1", SQUARE_METRES_GEOJSON, PROJECTED_CRS, 25.0
+        )
+        for point in points:
+            x, y = point.geometry["coordinates"]
+            self.assertTrue(polygon.contains(Point(x, y)))
+
+    def test_points_are_derived_locations(self) -> None:
+        points = suggest_grid_sample_points(
+            "field-1", SQUARE_METRES_GEOJSON, PROJECTED_CRS, 25.0
+        )
+        for point in points:
+            self.assertEqual(point.status, "DERIVED_LOCATION")
+            self.assertEqual(point.classification, DataClassification.DERIVED)
+            self.assertEqual(point.derivation_method, "REGULAR_GRID")
+            self.assertTrue(point.point_id)
+
+    def test_distinct_points_have_distinct_ids(self) -> None:
+        points = suggest_grid_sample_points(
+            "field-1", SQUARE_METRES_GEOJSON, PROJECTED_CRS, 25.0
+        )
+        ids = [p.point_id for p in points]
+        self.assertEqual(len(ids), len(set(ids)))
 
 
 if __name__ == "__main__":
