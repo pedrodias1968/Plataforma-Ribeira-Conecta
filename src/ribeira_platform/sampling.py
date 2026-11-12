@@ -8,11 +8,13 @@ A suggested sample point is a DERIVED_LOCATION, not a soil measurement.
 
 from __future__ import annotations
 
+import math
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
-from pyproj import CRS
+from pyproj import CRS, Transformer
+from pyproj.exceptions import CRSError
 from shapely.errors import GEOSException
 from shapely.geometry import Point, shape
 from shapely.validation import explain_validity
@@ -299,6 +301,87 @@ def suggest_zone_sample_points(
         )
 
     return tuple(points)
+
+
+def reproject_sample_points(
+    points: tuple[SuggestedSamplePoint, ...] | list[SuggestedSamplePoint],
+    source_crs: CRS | object | None,
+    target_crs: CRS | object | str = "EPSG:4326",
+) -> tuple[SuggestedSamplePoint, ...]:
+    """Reproject suggested sample points between coordinate reference systems.
+
+    Evidence First: this is a pure coordinate transformation. It changes only
+    each point's geometry; every other field (``point_id``, ``zone_id``,
+    ``status``, ``classification``, ``derivation_method``, ``generated_at``) is
+    preserved unchanged and the input objects are never mutated. New objects are
+    returned in the same order as the input.
+
+    The grid is normally generated in the talhão's projected CRS (metres) while
+    the standard GeoJSON (RFC 7946) representation uses EPSG:4326 lon/lat, so
+    this conversion is required before serializing to a standard map.
+
+    ``source_crs`` and ``target_crs`` are parsed with pyproj and rejected when
+    missing or invalid. A non-``SuggestedSamplePoint`` item, a non-``Point``
+    geometry or a non-finite resulting coordinate is rejected explicitly. An
+    empty input returns an empty tuple.
+    """
+    if not isinstance(points, (tuple, list)):
+        raise SamplingValidationError(
+            "points must be a sequence of SuggestedSamplePoint"
+        )
+
+    try:
+        source = CRS.from_user_input(source_crs) if source_crs is not None else None
+    except (CRSError, ValueError, TypeError) as exc:
+        raise SamplingValidationError(f"invalid source_crs: {exc}") from exc
+    if source is None:
+        raise SamplingValidationError("source_crs is required")
+
+    try:
+        target = CRS.from_user_input(target_crs) if target_crs is not None else None
+    except (CRSError, ValueError, TypeError) as exc:
+        raise SamplingValidationError(f"invalid target_crs: {exc}") from exc
+    if target is None:
+        raise SamplingValidationError("target_crs is required")
+
+    transformer = Transformer.from_crs(source, target, always_xy=True)
+
+    reprojected: list[SuggestedSamplePoint] = []
+    for point in points:
+        if not isinstance(point, SuggestedSamplePoint):
+            raise SamplingValidationError(
+                f"points must contain SuggestedSamplePoint, got {type(point).__name__}"
+            )
+
+        geometry = point.geometry
+        if not isinstance(geometry, dict) or geometry.get("type") != "Point":
+            raise SamplingValidationError(
+                "sample point geometry must be a Point"
+            )
+        coordinates = geometry.get("coordinates")
+        if not coordinates or len(coordinates) != 2:
+            raise SamplingValidationError(
+                "Point coordinates must have two numbers"
+            )
+
+        try:
+            x, y = transformer.transform(coordinates[0], coordinates[1])
+        except (CRSError, ValueError, TypeError) as exc:
+            raise SamplingValidationError(f"reprojection failed: {exc}") from exc
+
+        if not (math.isfinite(x) and math.isfinite(y)):
+            raise SamplingValidationError(
+                "reprojected coordinate must be finite"
+            )
+
+        reprojected.append(
+            replace(
+                point,
+                geometry={"type": "Point", "coordinates": [x, y]},
+            )
+        )
+
+    return tuple(reprojected)
 
 
 _CONFIRM_NAMESPACE = uuid.UUID("a1c4e7b2-3d5f-4a6b-8c9d-0e1f2a3b4c5d")

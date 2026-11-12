@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import unittest
 
+from pyproj import Transformer
 from shapely.geometry import Point, shape
 
 from ribeira_platform.epistemology import DataClassification
@@ -20,6 +21,7 @@ from ribeira_platform.sampling import (
     SuggestedSamplePoint,
     confirmed_locations_to_feature_collection,
     confirm_sample_location,
+    reproject_sample_points,
     sample_points_to_feature_collection,
     suggest_grid_sample_points,
     suggest_zone_sample_points,
@@ -746,3 +748,149 @@ class FeatureCollectionSerializationTest(unittest.TestCase):
             (location.geometry, location.classification, location.adjustment_note),
             before,
         )
+
+
+class ReprojectSamplePointsTest(unittest.TestCase):
+    PROJECTED_CRS = "EPSG:31983"
+    GEOGRAPHIC_CRS = "EPSG:4326"
+
+    def _point(
+        self,
+        point_id: str = "point-1",
+        zone_id: str | None = "zone-1",
+        coordinates: tuple[float, float] = (500000.0, 7300000.0),
+    ) -> SuggestedSamplePoint:
+        return SuggestedSamplePoint(
+            point_id=point_id,
+            field_id="field-1",
+            geometry={"type": "Point", "coordinates": list(coordinates)},
+            derivation_method="REGULAR_GRID",
+            zone_id=zone_id,
+            generated_at="2026-01-01T00:00:00Z",
+        )
+
+    def test_round_trip_returns_original_point(self) -> None:
+        original = self._point()
+        forward = reproject_sample_points(
+            [original], self.PROJECTED_CRS, self.GEOGRAPHIC_CRS
+        )
+        back = reproject_sample_points(
+            forward, self.GEOGRAPHIC_CRS, self.PROJECTED_CRS
+        )
+        result_x, result_y = back[0].geometry["coordinates"]
+        self.assertAlmostEqual(result_x, original.geometry["coordinates"][0], places=6)
+        self.assertAlmostEqual(result_y, original.geometry["coordinates"][1], places=6)
+
+    def test_output_is_lon_lat_in_valid_range(self) -> None:
+        result = reproject_sample_points(
+            [self._point()], self.PROJECTED_CRS, self.GEOGRAPHIC_CRS
+        )
+        lon, lat = result[0].geometry["coordinates"]
+        self.assertGreaterEqual(lon, -180.0)
+        self.assertLessEqual(lon, 180.0)
+        self.assertGreaterEqual(lat, -90.0)
+        self.assertLessEqual(lat, 90.0)
+
+    def test_matches_pyproj_reference(self) -> None:
+        original = self._point()
+        transformer = Transformer.from_crs(
+            self.PROJECTED_CRS, self.GEOGRAPHIC_CRS, always_xy=True
+        )
+        expected_lon, expected_lat = transformer.transform(
+            original.geometry["coordinates"][0],
+            original.geometry["coordinates"][1],
+        )
+        result = reproject_sample_points(
+            [original], self.PROJECTED_CRS, self.GEOGRAPHIC_CRS
+        )
+        lon, lat = result[0].geometry["coordinates"]
+        self.assertAlmostEqual(lon, expected_lon, places=9)
+        self.assertAlmostEqual(lat, expected_lat, places=9)
+
+    def test_preserves_all_other_fields(self) -> None:
+        original = self._point(point_id="p-42", zone_id="zone-9")
+        result = reproject_sample_points(
+            [original], self.PROJECTED_CRS, self.GEOGRAPHIC_CRS
+        )[0]
+        self.assertEqual(result.point_id, original.point_id)
+        self.assertEqual(result.zone_id, original.zone_id)
+        self.assertEqual(result.status, original.status)
+        self.assertEqual(result.classification, original.classification)
+        self.assertEqual(result.derivation_method, original.derivation_method)
+        self.assertEqual(result.generated_at, original.generated_at)
+        self.assertEqual(result.field_id, original.field_id)
+
+    def test_original_object_unchanged(self) -> None:
+        original = self._point()
+        before = original.geometry["coordinates"][:]
+        reproject_sample_points(
+            [original], self.PROJECTED_CRS, self.GEOGRAPHIC_CRS
+        )
+        self.assertEqual(original.geometry["coordinates"], before)
+
+    def test_returns_new_objects(self) -> None:
+        original = self._point()
+        result = reproject_sample_points(
+            [original], self.PROJECTED_CRS, self.GEOGRAPHIC_CRS
+        )
+        self.assertIsNot(result[0], original)
+
+    def test_preserves_order(self) -> None:
+        points = [
+            self._point("p1", coordinates=(500000.0, 7300000.0)),
+            self._point("p2", coordinates=(501000.0, 7301000.0)),
+            self._point("p3", coordinates=(502000.0, 7302000.0)),
+        ]
+        result = reproject_sample_points(
+            points, self.PROJECTED_CRS, self.GEOGRAPHIC_CRS
+        )
+        self.assertEqual([p.point_id for p in result], ["p1", "p2", "p3"])
+
+    def test_none_zone_id_preserved(self) -> None:
+        original = self._point(zone_id=None)
+        result = reproject_sample_points(
+            [original], self.PROJECTED_CRS, self.GEOGRAPHIC_CRS
+        )[0]
+        self.assertIsNone(result.zone_id)
+
+    def test_empty_sequence_returns_empty_tuple(self) -> None:
+        result = reproject_sample_points([], self.PROJECTED_CRS)
+        self.assertEqual(result, ())
+
+    def test_rejects_missing_source_crs(self) -> None:
+        with self.assertRaises(SamplingValidationError):
+            reproject_sample_points([self._point()], None)
+
+    def test_rejects_invalid_source_crs(self) -> None:
+        with self.assertRaises(SamplingValidationError):
+            reproject_sample_points([self._point()], "not-a-crs")
+
+    def test_rejects_invalid_target_crs(self) -> None:
+        with self.assertRaises(SamplingValidationError):
+            reproject_sample_points(
+                [self._point()], self.PROJECTED_CRS, "not-a-crs"
+            )
+
+    def test_rejects_wrong_item_type(self) -> None:
+        with self.assertRaises(SamplingValidationError):
+            reproject_sample_points([object()], self.PROJECTED_CRS)
+
+    def test_rejects_non_point_geometry(self) -> None:
+        bad = SuggestedSamplePoint(
+            point_id="bad",
+            field_id="field-1",
+            geometry={
+                "type": "LineString",
+                "coordinates": [[0.0, 0.0], [1.0, 1.0]],
+            },
+            derivation_method="REGULAR_GRID",
+        )
+        with self.assertRaises(SamplingValidationError):
+            reproject_sample_points([bad], self.PROJECTED_CRS)
+
+    def test_rejects_non_finite_result(self) -> None:
+        original = self._point(coordinates=(float("inf"), float("inf")))
+        with self.assertRaises(SamplingValidationError):
+            reproject_sample_points(
+                [original], self.PROJECTED_CRS, self.GEOGRAPHIC_CRS
+            )
