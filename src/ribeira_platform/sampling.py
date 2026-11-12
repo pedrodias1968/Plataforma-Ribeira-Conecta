@@ -240,6 +240,67 @@ def suggest_grid_sample_points(
     return tuple(points)
 
 
+_ZONE_NAMESPACE = uuid.UUID("b2d5f8a3-4e6c-5b7d-9e0f-1a2b3c4d5e6f")
+_ZONE_DERIVATION_METHOD = "ZONE_REPRESENTATIVE_POINT"
+
+
+def suggest_zone_sample_points(
+    zones: tuple[ManagementZone, ...] | list[ManagementZone],
+    generated_at: str | None = None,
+) -> tuple[SuggestedSamplePoint, ...]:
+    """Suggest exactly one sample point per already-delineated management zone.
+
+    Evidence First: the result is DERIVED_LOCATION, not a measurement and not an
+    agronomic prescription. Exactly one point per zone is returned, using each
+    zone's ``representative_point()``. The number of points per zone and any
+    sampling density are agronomic rules that are NOT decided here.
+
+    Each zone is validated before use. Empty input, non-ManagementZone items
+    and duplicate ``zone_id`` values are rejected. Zone order is preserved.
+    """
+    if not isinstance(zones, (tuple, list)):
+        raise SamplingValidationError("zones must be a sequence of ManagementZone")
+    if len(zones) == 0:
+        raise SamplingValidationError("zones must not be empty")
+
+    seen_zone_ids: set[str] = set()
+    points: list[SuggestedSamplePoint] = []
+
+    for zone in zones:
+        if not isinstance(zone, ManagementZone):
+            raise SamplingValidationError("each zone must be a ManagementZone")
+        if zone.zone_id in seen_zone_ids:
+            raise SamplingValidationError(f"duplicate zone_id: {zone.zone_id}")
+        seen_zone_ids.add(zone.zone_id)
+
+        validate_management_zone(
+            zone.geometry, zone.derivation_method, zone.inputs
+        )
+
+        representative = shape(zone.geometry).representative_point()
+        x, y = representative.x, representative.y
+
+        key = f"{zone.zone_id}|{x:.6f}|{y:.6f}|{_ZONE_DERIVATION_METHOD}"
+        point_id = str(uuid.uuid5(_ZONE_NAMESPACE, key))
+
+        kwargs: dict[str, Any] = {}
+        if generated_at is not None:
+            kwargs["generated_at"] = generated_at
+
+        points.append(
+            SuggestedSamplePoint(
+                point_id=point_id,
+                field_id=zone.field_id,
+                geometry={"type": "Point", "coordinates": [x, y]},
+                derivation_method=_ZONE_DERIVATION_METHOD,
+                zone_id=zone.zone_id,
+                **kwargs,
+            )
+        )
+
+    return tuple(points)
+
+
 _CONFIRM_NAMESPACE = uuid.UUID("a1c4e7b2-3d5f-4a6b-8c9d-0e1f2a3b4c5d")
 
 

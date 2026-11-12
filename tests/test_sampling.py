@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import unittest
 
+from shapely.geometry import Point, shape
+
 from ribeira_platform.epistemology import DataClassification
 from ribeira_platform.sampling import (
     ConfirmedSampleLocation,
@@ -17,6 +19,7 @@ from ribeira_platform.sampling import (
     SuggestedSamplePoint,
     confirm_sample_location,
     suggest_grid_sample_points,
+    suggest_zone_sample_points,
     validate_management_zone,
 )
 
@@ -327,6 +330,97 @@ class SuggestGridSamplePointsTest(unittest.TestCase):
             suggest_grid_sample_points(
                 "field-1", SQUARE_METRES_GEOJSON, PROJECTED_CRS, 25.0, max_points=0
             )
+
+
+class SuggestZoneSamplePointsTest(unittest.TestCase):
+    def _zone(
+        self,
+        zone_id: str = "zone-1",
+        field_id: str = "field-1",
+        geometry: dict | None = None,
+        derivation_method: str = "TERRAIN_VARIABILITY",
+        inputs: tuple[str, ...] = ("dem",),
+    ) -> ManagementZone:
+        return ManagementZone(
+            zone_id=zone_id,
+            field_id=field_id,
+            geometry=geometry if geometry is not None else POLYGON_GEOJSON,
+            derivation_method=derivation_method,
+            method_version="v1",
+            inputs=inputs,
+        )
+
+    def test_returns_one_point_per_zone_preserving_order(self) -> None:
+        zones = [
+            self._zone("zone-a"),
+            self._zone("zone-b"),
+            self._zone("zone-c"),
+        ]
+        points = suggest_zone_sample_points(zones)
+        self.assertEqual(len(points), 3)
+        self.assertEqual(
+            [p.zone_id for p in points], ["zone-a", "zone-b", "zone-c"]
+        )
+
+    def test_point_lies_inside_its_zone(self) -> None:
+        zone = self._zone()
+        points = suggest_zone_sample_points([zone])
+        polygon = shape(zone.geometry)
+        x, y = points[0].geometry["coordinates"]
+        self.assertTrue(polygon.representative_point().equals(Point(x, y)))
+
+    def test_point_id_is_deterministic(self) -> None:
+        first = suggest_zone_sample_points(
+            [self._zone()], generated_at="2026-01-01T00:00:00Z"
+        )
+        second = suggest_zone_sample_points(
+            [self._zone()], generated_at="2026-01-01T00:00:00Z"
+        )
+        self.assertEqual(first[0].point_id, second[0].point_id)
+
+    def test_zone_id_and_field_id_are_propagated(self) -> None:
+        zone = self._zone(zone_id="zone-9", field_id="field-9")
+        points = suggest_zone_sample_points([zone])
+        self.assertEqual(points[0].zone_id, "zone-9")
+        self.assertEqual(points[0].field_id, "field-9")
+
+    def test_points_are_derived_locations(self) -> None:
+        points = suggest_zone_sample_points([self._zone()])
+        self.assertEqual(points[0].status, "DERIVED_LOCATION")
+        self.assertEqual(points[0].classification, DataClassification.DERIVED)
+        self.assertEqual(
+            points[0].derivation_method, "ZONE_REPRESENTATIVE_POINT"
+        )
+
+    def test_accepts_multipolygon_zone(self) -> None:
+        zone = self._zone(geometry=MULTIPOLYGON_GEOJSON)
+        points = suggest_zone_sample_points([zone])
+        self.assertEqual(len(points), 1)
+        self.assertEqual(points[0].zone_id, "zone-1")
+
+    def test_rejects_empty_sequence(self) -> None:
+        with self.assertRaises(SamplingValidationError):
+            suggest_zone_sample_points([])
+
+    def test_rejects_non_management_zone_item(self) -> None:
+        with self.assertRaises(SamplingValidationError):
+            suggest_zone_sample_points([self._zone(), object()])  # type: ignore[list-item]
+
+    def test_rejects_duplicate_zone_id(self) -> None:
+        with self.assertRaises(SamplingValidationError):
+            suggest_zone_sample_points(
+                [self._zone("zone-dup"), self._zone("zone-dup", field_id="field-2")]
+            )
+
+    def test_rejects_invalid_zone_geometry(self) -> None:
+        zone = self._zone(geometry=BOWTIE_GEOJSON, derivation_method="TERRAIN_VARIABILITY")
+        with self.assertRaises(SamplingValidationError):
+            suggest_zone_sample_points([zone])
+
+    def test_rejects_zone_with_empty_inputs(self) -> None:
+        zone = self._zone(inputs=())
+        with self.assertRaises(SamplingValidationError):
+            suggest_zone_sample_points([zone])
 
 
 class ConfirmSampleLocationTest(unittest.TestCase):
