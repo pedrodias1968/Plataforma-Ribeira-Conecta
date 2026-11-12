@@ -7,6 +7,7 @@ These tests intentionally do not assert any agronomic rule.
 
 from __future__ import annotations
 
+import json
 import unittest
 
 from shapely.geometry import Point, shape
@@ -17,10 +18,13 @@ from ribeira_platform.sampling import (
     ManagementZone,
     SamplingValidationError,
     SuggestedSamplePoint,
+    confirmed_locations_to_feature_collection,
     confirm_sample_location,
+    sample_points_to_feature_collection,
     suggest_grid_sample_points,
     suggest_zone_sample_points,
     validate_management_zone,
+    zones_to_feature_collection,
 )
 
 
@@ -580,3 +584,165 @@ class ConfirmSampleLocationTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FeatureCollectionSerializationTest(unittest.TestCase):
+    def _zone(self, zone_id: str = "zone-1", **overrides):
+        values = dict(
+            zone_id=zone_id,
+            field_id="field-1",
+            geometry={"type": "Polygon", "coordinates": POLYGON_GEOJSON["coordinates"]},
+            derivation_method="TERRAIN_VARIABILITY",
+            method_version="v1",
+            inputs=("dem", "sentinel2"),
+            generated_at="2026-01-01T00:00:00Z",
+            limitations=("derived_only",),
+        )
+        values.update(overrides)
+        return ManagementZone(**values)
+
+    def _point(self, point_id: str = "point-1", **overrides):
+        values = dict(
+            point_id=point_id,
+            field_id="field-1",
+            geometry={"type": "Point", "coordinates": [-46.99, -24.01]},
+            derivation_method="ZONE_CENTROID",
+            zone_id="zone-1",
+            generated_at="2026-01-01T00:00:00Z",
+        )
+        values.update(overrides)
+        return SuggestedSamplePoint(**values)
+
+    def _confirmed(self, point_id: str = "confirmed-1", **overrides):
+        values = dict(
+            point_id=point_id,
+            field_id="field-1",
+            suggested_point_id="point-1",
+            geometry={"type": "Point", "coordinates": [-46.99, -24.01]},
+            confirmed_by="tech-1",
+            confirmed_at="2026-01-02T00:00:00Z",
+            adjusted=False,
+            adjustment_note=None,
+        )
+        values.update(overrides)
+        return ConfirmedSampleLocation(**values)
+
+    def test_empty_sequence_yields_no_features(self) -> None:
+        for serializer in (
+            zones_to_feature_collection,
+            sample_points_to_feature_collection,
+            confirmed_locations_to_feature_collection,
+        ):
+            result = serializer([])
+            self.assertEqual(result, {"type": "FeatureCollection", "features": []})
+
+    def test_zones_feature_count_and_json_dumpable(self) -> None:
+        result = zones_to_feature_collection([self._zone("z1"), self._zone("z2")])
+        self.assertEqual(result["type"], "FeatureCollection")
+        self.assertEqual(len(result["features"]), 2)
+        json.dumps(result)
+
+    def test_zones_classification_is_serialized_as_string(self) -> None:
+        feature = zones_to_feature_collection([self._zone()])["features"][0]
+        self.assertEqual(feature["properties"]["classification"], "DERIVED")
+
+    def test_zones_inputs_and_limitations_become_lists(self) -> None:
+        props = zones_to_feature_collection([self._zone()])["features"][0]["properties"]
+        self.assertEqual(props["inputs"], ["dem", "sentinel2"])
+        self.assertEqual(props["limitations"], ["derived_only"])
+        self.assertIsInstance(props["inputs"], list)
+        self.assertIsInstance(props["limitations"], list)
+
+    def test_zones_geometry_identical_to_original(self) -> None:
+        zone = self._zone()
+        feature = zones_to_feature_collection([zone])["features"][0]
+        self.assertEqual(feature["geometry"], zone.geometry)
+        self.assertIs(feature["geometry"], zone.geometry)
+
+    def test_zones_order_preserved(self) -> None:
+        result = zones_to_feature_collection(
+            [self._zone("z1"), self._zone("z2"), self._zone("z3")]
+        )
+        ids = [f["properties"]["zone_id"] for f in result["features"]]
+        self.assertEqual(ids, ["z1", "z2", "z3"])
+
+    def test_zones_original_object_unchanged(self) -> None:
+        zone = self._zone()
+        before = (
+            zone.geometry,
+            zone.inputs,
+            zone.limitations,
+            zone.classification,
+        )
+        zones_to_feature_collection([zone])
+        self.assertEqual(
+            (zone.geometry, zone.inputs, zone.limitations, zone.classification),
+            before,
+        )
+
+    def test_zones_reject_wrong_item_type(self) -> None:
+        with self.assertRaises(SamplingValidationError):
+            zones_to_feature_collection([self._zone(), object()])
+
+    def test_points_feature_collection(self) -> None:
+        result = sample_points_to_feature_collection([self._point("p1"), self._point("p2")])
+        self.assertEqual(len(result["features"]), 2)
+        json.dumps(result)
+        props = result["features"][0]["properties"]
+        self.assertEqual(props["classification"], "DERIVED")
+        self.assertEqual(props["status"], "DERIVED_LOCATION")
+        self.assertEqual(props["zone_id"], "zone-1")
+        self.assertEqual(result["features"][0]["geometry"], self._point().geometry)
+
+    def test_points_none_zone_id_stays_none(self) -> None:
+        props = sample_points_to_feature_collection(
+            [self._point(zone_id=None)]
+        )["features"][0]["properties"]
+        self.assertIsNone(props["zone_id"])
+
+    def test_points_excludes_geometry_from_properties(self) -> None:
+        props = sample_points_to_feature_collection([self._point()])["features"][0][
+            "properties"
+        ]
+        self.assertNotIn("geometry", props)
+
+    def test_points_reject_wrong_item_type(self) -> None:
+        with self.assertRaises(SamplingValidationError):
+            sample_points_to_feature_collection([self._point(), object()])
+
+    def test_confirmed_locations_feature_collection(self) -> None:
+        result = confirmed_locations_to_feature_collection(
+            [self._confirmed("c1"), self._confirmed("c2")]
+        )
+        self.assertEqual(len(result["features"]), 2)
+        json.dumps(result)
+        props = result["features"][0]["properties"]
+        self.assertEqual(props["classification"], "MANUAL_CONFIRMED")
+        self.assertEqual(props["suggested_point_id"], "point-1")
+        self.assertIsNone(props["adjustment_note"])
+        self.assertFalse(props["adjusted"])
+
+    def test_confirmed_locations_order_preserved(self) -> None:
+        result = confirmed_locations_to_feature_collection(
+            [self._confirmed("c1"), self._confirmed("c2")]
+        )
+        ids = [f["properties"]["point_id"] for f in result["features"]]
+        self.assertEqual(ids, ["c1", "c2"])
+
+    def test_confirmed_locations_geometry_identical(self) -> None:
+        location = self._confirmed()
+        feature = confirmed_locations_to_feature_collection([location])["features"][0]
+        self.assertEqual(feature["geometry"], location.geometry)
+
+    def test_confirmed_locations_reject_wrong_item_type(self) -> None:
+        with self.assertRaises(SamplingValidationError):
+            confirmed_locations_to_feature_collection([self._confirmed(), object()])
+
+    def test_confirmed_locations_original_object_unchanged(self) -> None:
+        location = self._confirmed()
+        before = (location.geometry, location.classification, location.adjustment_note)
+        confirmed_locations_to_feature_collection([location])
+        self.assertEqual(
+            (location.geometry, location.classification, location.adjustment_note),
+            before,
+        )

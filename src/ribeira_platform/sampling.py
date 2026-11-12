@@ -426,3 +426,58 @@ def confirm_sample_location(
         adjusted=adjusted,
         adjustment_note=note,
     )
+
+
+def _serialize_property_value(value: Any) -> Any:
+    if isinstance(value, DataClassification):
+        return str(value)
+    if isinstance(value, tuple):
+        return list(value)
+    return value
+
+
+def _to_feature_collection(
+    items: Any,
+    expected_type: type,
+    label: str,
+) -> dict[str, Any]:
+    features: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, expected_type):
+            raise SamplingValidationError(
+                f"{label} item must be a {expected_type.__name__}"
+            )
+        properties = {
+            field_name: _serialize_property_value(getattr(item, field_name))
+            for field_name in item.__dataclass_fields__
+            if field_name != "geometry"
+        }
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": item.geometry,
+                "properties": properties,
+            }
+        )
+    return {"type": "FeatureCollection", "features": features}
+
+
+def zones_to_feature_collection(zones: Any) -> dict[str, Any]:
+    """Serialize management zones as a GeoJSON FeatureCollection.
+
+    Pure serialization: geometry is passed through unchanged, every other
+    dataclass field becomes a property and no new property is invented.
+    """
+    return _to_feature_collection(zones, ManagementZone, "management zone")
+
+
+def sample_points_to_feature_collection(points: Any) -> dict[str, Any]:
+    """Serialize suggested sample points as a GeoJSON FeatureCollection."""
+    return _to_feature_collection(points, SuggestedSamplePoint, "sample point")
+
+
+def confirmed_locations_to_feature_collection(locations: Any) -> dict[str, Any]:
+    """Serialize confirmed sample locations as a GeoJSON FeatureCollection."""
+    return _to_feature_collection(
+        locations, ConfirmedSampleLocation, "confirmed location"
+    )
