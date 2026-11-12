@@ -11,9 +11,11 @@ import unittest
 
 from ribeira_platform.epistemology import DataClassification
 from ribeira_platform.sampling import (
+    ConfirmedSampleLocation,
     ManagementZone,
     SamplingValidationError,
     SuggestedSamplePoint,
+    confirm_sample_location,
     suggest_grid_sample_points,
     validate_management_zone,
 )
@@ -289,6 +291,156 @@ class SuggestGridSamplePointsTest(unittest.TestCase):
         )
         ids = [p.point_id for p in points]
         self.assertEqual(len(ids), len(set(ids)))
+
+
+class ConfirmSampleLocationTest(unittest.TestCase):
+    def _suggestion(self) -> SuggestedSamplePoint:
+        return SuggestedSamplePoint(
+            point_id="suggested-1",
+            field_id="field-1",
+            geometry={"type": "Point", "coordinates": [50.0, 50.0]},
+            derivation_method="REGULAR_GRID",
+        )
+
+    def test_without_adjustment_uses_suggested_geometry(self) -> None:
+        suggestion = self._suggestion()
+        confirmed = confirm_sample_location(
+            suggestion, SQUARE_METRES_GEOJSON, "tech-1"
+        )
+        self.assertEqual(confirmed.geometry, suggestion.geometry)
+        self.assertFalse(confirmed.adjusted)
+        self.assertIsNone(confirmed.adjustment_note)
+
+    def test_confirmed_classification_is_manual_confirmed(self) -> None:
+        confirmed = confirm_sample_location(
+            self._suggestion(), SQUARE_METRES_GEOJSON, "tech-1"
+        )
+        self.assertEqual(
+            confirmed.classification, DataClassification.MANUAL_CONFIRMED
+        )
+
+    def test_link_to_suggested_point_is_kept(self) -> None:
+        suggestion = self._suggestion()
+        confirmed = confirm_sample_location(
+            suggestion, SQUARE_METRES_GEOJSON, "tech-1"
+        )
+        self.assertEqual(confirmed.suggested_point_id, suggestion.point_id)
+        self.assertEqual(confirmed.field_id, suggestion.field_id)
+
+    def test_original_suggestion_is_not_mutated(self) -> None:
+        suggestion = self._suggestion()
+        before = (
+            suggestion.point_id,
+            suggestion.field_id,
+            dict(suggestion.geometry),
+        )
+        confirm_sample_location(suggestion, SQUARE_METRES_GEOJSON, "tech-1")
+        self.assertEqual(suggestion.point_id, before[0])
+        self.assertEqual(suggestion.field_id, before[1])
+        self.assertEqual(suggestion.geometry, before[2])
+
+    def test_adjusted_location_inside_field(self) -> None:
+        confirmed = confirm_sample_location(
+            self._suggestion(),
+            SQUARE_METRES_GEOJSON,
+            "tech-1",
+            adjusted_geometry={"type": "Point", "coordinates": [10.0, 10.0]},
+            adjustment_note="moved to avoid a rock",
+        )
+        self.assertTrue(confirmed.adjusted)
+        self.assertEqual(
+            confirmed.geometry, {"type": "Point", "coordinates": [10.0, 10.0]}
+        )
+        self.assertEqual(confirmed.adjustment_note, "moved to avoid a rock")
+
+    def test_rejects_adjusted_location_outside_field(self) -> None:
+        with self.assertRaises(SamplingValidationError):
+            confirm_sample_location(
+                self._suggestion(),
+                SQUARE_METRES_GEOJSON,
+                "tech-1",
+                adjusted_geometry={"type": "Point", "coordinates": [500.0, 500.0]},
+                adjustment_note="outside",
+            )
+
+    def test_rejects_adjustment_without_note(self) -> None:
+        with self.assertRaises(SamplingValidationError):
+            confirm_sample_location(
+                self._suggestion(),
+                SQUARE_METRES_GEOJSON,
+                "tech-1",
+                adjusted_geometry={"type": "Point", "coordinates": [10.0, 10.0]},
+            )
+
+    def test_rejects_blank_adjustment_note(self) -> None:
+        with self.assertRaises(SamplingValidationError):
+            confirm_sample_location(
+                self._suggestion(),
+                SQUARE_METRES_GEOJSON,
+                "tech-1",
+                adjusted_geometry={"type": "Point", "coordinates": [10.0, 10.0]},
+                adjustment_note="   ",
+            )
+
+    def test_rejects_empty_confirmed_by(self) -> None:
+        with self.assertRaises(SamplingValidationError):
+            confirm_sample_location(self._suggestion(), SQUARE_METRES_GEOJSON, "")
+
+    def test_rejects_blank_confirmed_by(self) -> None:
+        with self.assertRaises(SamplingValidationError):
+            confirm_sample_location(
+                self._suggestion(), SQUARE_METRES_GEOJSON, "   "
+            )
+
+    def test_rejects_non_point_adjustment_geometry(self) -> None:
+        with self.assertRaises(SamplingValidationError):
+            confirm_sample_location(
+                self._suggestion(),
+                SQUARE_METRES_GEOJSON,
+                "tech-1",
+                adjusted_geometry=SQUARE_METRES_GEOJSON,
+                adjustment_note="not a point",
+            )
+
+    def test_confirmed_at_defaults_to_utc_iso(self) -> None:
+        confirmed = confirm_sample_location(
+            self._suggestion(), SQUARE_METRES_GEOJSON, "tech-1"
+        )
+        self.assertTrue(confirmed.confirmed_at)
+        self.assertIn("+00:00", confirmed.confirmed_at)
+
+    def test_confirmed_at_can_be_provided(self) -> None:
+        confirmed = confirm_sample_location(
+            self._suggestion(),
+            SQUARE_METRES_GEOJSON,
+            "tech-1",
+            confirmed_at="2026-01-01T00:00:00Z",
+        )
+        self.assertEqual(confirmed.confirmed_at, "2026-01-01T00:00:00Z")
+
+    def test_deterministic_point_id(self) -> None:
+        first = confirm_sample_location(
+            self._suggestion(), SQUARE_METRES_GEOJSON, "tech-1"
+        )
+        second = confirm_sample_location(
+            self._suggestion(), SQUARE_METRES_GEOJSON, "tech-1"
+        )
+        self.assertEqual(first.point_id, second.point_id)
+
+    def test_confirmed_location_is_frozen(self) -> None:
+        confirmed = confirm_sample_location(
+            self._suggestion(), SQUARE_METRES_GEOJSON, "tech-1"
+        )
+        with self.assertRaises(Exception):
+            confirmed.adjusted = True  # type: ignore[misc]
+
+    def test_is_not_a_sample_point_or_lab_analysis(self) -> None:
+        confirmed = confirm_sample_location(
+            self._suggestion(), SQUARE_METRES_GEOJSON, "tech-1"
+        )
+        self.assertIsInstance(confirmed, ConfirmedSampleLocation)
+        self.assertFalse(hasattr(confirmed, "value"))
+        self.assertFalse(hasattr(confirmed, "lab_result"))
 
 
 if __name__ == "__main__":

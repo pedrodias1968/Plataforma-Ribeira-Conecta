@@ -206,3 +206,129 @@ def suggest_grid_sample_points(
         )
 
     return tuple(points)
+
+
+_CONFIRM_NAMESPACE = uuid.UUID("a1c4e7b2-3d5f-4a6b-8c9d-0e1f2a3b4c5d")
+
+
+@dataclass(frozen=True)
+class ConfirmedSampleLocation:
+    """Technician-confirmed sampling location for a field.
+
+    Evidence First: confirming a location is a MANUAL_CONFIRMED planning act.
+    It is NOT a collected soil sample and NOT a laboratory result. No
+    measurement is created here. The confirmed location always keeps a link to
+    the original suggested point through ``suggested_point_id``; the original
+    suggestion is never mutated.
+    """
+
+    point_id: str
+    field_id: str
+    suggested_point_id: str
+    geometry: dict[str, Any]
+    confirmed_by: str
+    confirmed_at: str
+    adjusted: bool
+    adjustment_note: str | None = None
+    classification: DataClassification = DataClassification.MANUAL_CONFIRMED
+
+
+def _validate_point_geometry(geometry: dict[str, Any]) -> Point:
+    if not isinstance(geometry, dict):
+        raise SamplingValidationError("geometry must be a dict")
+    if geometry.get("type") != "Point":
+        raise SamplingValidationError("geometry type must be 'Point'")
+    coordinates = geometry.get("coordinates")
+    if not coordinates or len(coordinates) != 2:
+        raise SamplingValidationError("Point coordinates must have two numbers")
+    try:
+        return shape(geometry)
+    except (GEOSException, ValueError, TypeError) as exc:
+        raise SamplingValidationError(f"invalid geometry: {exc}") from exc
+
+
+def _validate_field_polygon(field_geometry: dict[str, Any]):
+    if not isinstance(field_geometry, dict):
+        raise SamplingValidationError("field_geometry must be a dict")
+    geometry_type = field_geometry.get("type")
+    if geometry_type not in _ALLOWED_ZONE_TYPES:
+        raise SamplingValidationError(
+            "field_geometry type must be 'Polygon' or 'MultiPolygon'"
+        )
+    if not field_geometry.get("coordinates"):
+        raise SamplingValidationError("field_geometry coordinates must not be empty")
+    try:
+        polygon = shape(field_geometry)
+    except (GEOSException, ValueError, TypeError) as exc:
+        raise SamplingValidationError(f"invalid field_geometry: {exc}") from exc
+    if polygon.is_empty:
+        raise SamplingValidationError("field_geometry must not be empty")
+    return polygon
+
+
+def confirm_sample_location(
+    suggestion: SuggestedSamplePoint,
+    field_geometry: dict[str, Any],
+    confirmed_by: str,
+    adjusted_geometry: dict[str, Any] | None = None,
+    adjustment_note: str | None = None,
+    confirmed_at: str | None = None,
+) -> ConfirmedSampleLocation:
+    """Confirm a suggested sample location, optionally adjusted by a technician.
+
+    Evidence First: the result is a MANUAL_CONFIRMED planning location. It is
+    neither a collected sample nor a laboratory result; no measurement is
+    produced. The original suggestion is left untouched and the confirmed
+    location always retains ``suggested_point_id`` as its link back to it.
+
+    Without ``adjusted_geometry`` the suggested point geometry is used and
+    ``adjusted`` is False. With an adjustment the point must be a GeoJSON Point
+    inside the field polygon and ``adjustment_note`` must be non-empty.
+    ``confirmed_by`` is mandatory.
+    """
+    if not isinstance(confirmed_by, str) or not confirmed_by.strip():
+        raise SamplingValidationError("confirmed_by must not be empty")
+
+    if not isinstance(suggestion, SuggestedSamplePoint):
+        raise SamplingValidationError("suggestion must be a SuggestedSamplePoint")
+
+    field_polygon = _validate_field_polygon(field_geometry)
+
+    if adjusted_geometry is None:
+        geometry = suggestion.geometry
+        adjusted = False
+        note: str | None = None
+    else:
+        if not isinstance(adjustment_note, str) or not adjustment_note.strip():
+            raise SamplingValidationError(
+                "adjustment_note must not be empty when adjusting a location"
+            )
+        point = _validate_point_geometry(adjusted_geometry)
+        if not field_polygon.contains(point):
+            raise SamplingValidationError(
+                "adjusted_geometry must be inside the field polygon"
+            )
+        geometry = adjusted_geometry
+        adjusted = True
+        note = adjustment_note
+
+    x, y = geometry["coordinates"]
+    key = (
+        f"{suggestion.point_id}|{confirmed_by}|{x:.6f}|{y:.6f}|"
+        f"{'ADJUSTED' if adjusted else 'AS_SUGGESTED'}"
+    )
+    point_id = str(uuid.uuid5(_CONFIRM_NAMESPACE, key))
+
+    if confirmed_at is None:
+        confirmed_at = now_utc()
+
+    return ConfirmedSampleLocation(
+        point_id=point_id,
+        field_id=suggestion.field_id,
+        suggested_point_id=suggestion.point_id,
+        geometry=geometry,
+        confirmed_by=confirmed_by,
+        confirmed_at=confirmed_at,
+        adjusted=adjusted,
+        adjustment_note=note,
+    )
