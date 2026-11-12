@@ -108,6 +108,9 @@ describe("SamplingPreview", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Baixar GeoJSON" }));
     });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
     expect(blobParts).toHaveLength(1);
     expect(blobParts[0]).toBe(JSON.stringify(preview.points));
     expect(createObjectURL).toHaveBeenCalledTimes(1);
@@ -152,5 +155,91 @@ describe("SamplingPreview", () => {
       fireEvent.click(screen.getByRole("button", { name: "Gerar prévia" }));
     });
     expect(screen.getByText("Espaçamento inválido ou grade grande demais para este talhão.")).toBeInTheDocument();
+  });
+
+  const twoFields = [
+    { id: "f1", name: "Talhão A" },
+    { id: "f2", name: "Talhão B" },
+  ] as FieldContext[];
+
+  it("hides the previous preview when the field changes after generating", async () => {
+    const api = fakeApi();
+    render(<SamplingPreview fields={twoFields} tenantId="t" propertyId="p" api={api} />);
+    fireEvent.change(screen.getByLabelText("Talhão"), { target: { value: "f1" } });
+    fireEvent.change(screen.getByLabelText("Espaçamento (m)"), { target: { value: "50" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Gerar prévia" }));
+    });
+    expect(screen.getByText("-47.851235")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Talhão"), { target: { value: "f2" } });
+    expect(screen.queryByText("-47.851235")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Baixar GeoJSON" })).not.toBeInTheDocument();
+  });
+
+  it("hides the previous preview when the spacing changes after generating", async () => {
+    const api = fakeApi();
+    renderPreview(api);
+    fireEvent.change(screen.getByLabelText("Talhão"), { target: { value: "f1" } });
+    fireEvent.change(screen.getByLabelText("Espaçamento (m)"), { target: { value: "50" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Gerar prévia" }));
+    });
+    expect(screen.getByText("-47.851235")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Espaçamento (m)"), { target: { value: "25" } });
+    expect(screen.queryByText("-47.851235")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Baixar GeoJSON" })).not.toBeInTheDocument();
+  });
+
+  it("ignores a late response for a previously selected field", async () => {
+    let resolvePreview!: (value: SamplingGridPreview) => void;
+    const deferred = new Promise<SamplingGridPreview>((resolve) => {
+      resolvePreview = resolve;
+    });
+    const api = fakeApi({ samplingGridPreview: vi.fn().mockReturnValue(deferred) });
+    render(<SamplingPreview fields={twoFields} tenantId="t" propertyId="p" api={api} />);
+    fireEvent.change(screen.getByLabelText("Talhão"), { target: { value: "f1" } });
+    fireEvent.change(screen.getByLabelText("Espaçamento (m)"), { target: { value: "50" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Gerar prévia" }));
+    });
+
+    fireEvent.change(screen.getByLabelText("Talhão"), { target: { value: "f2" } });
+    await act(async () => {
+      resolvePreview(preview);
+      await deferred;
+    });
+    expect(screen.queryByText("-47.851235")).not.toBeInTheDocument();
+  });
+
+  it("revokes the object URL asynchronously after the download click", async () => {
+    vi.useFakeTimers();
+    const api = fakeApi();
+    class CaptureBlob {
+      constructor(parts: BlobPart[]) {
+        void parts;
+      }
+    }
+    vi.stubGlobal("Blob", CaptureBlob);
+    const createObjectURL = vi.fn().mockReturnValue("blob:preview");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL });
+    renderPreview(api);
+    fireEvent.change(screen.getByLabelText("Talhão"), { target: { value: "f1" } });
+    fireEvent.change(screen.getByLabelText("Espaçamento (m)"), { target: { value: "50" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Gerar prévia" }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Baixar GeoJSON" }));
+    });
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+    await act(async () => {
+      vi.runAllTimers();
+    });
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:preview");
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 });

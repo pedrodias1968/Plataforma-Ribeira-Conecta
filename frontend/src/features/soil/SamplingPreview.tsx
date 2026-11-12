@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { SoilApiError, type SamplingGridPreview, type SoilApi } from "../../api/soil";
 import type { FieldContext } from "../../types/farm360";
@@ -21,18 +21,38 @@ export function SamplingPreview({ fields, tenantId, propertyId, api }: {
   const [preview, setPreview] = useState<SamplingGridPreview | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const requestId = useRef(0);
 
   const spacingValue = Number(spacing);
   const canGenerate = fieldId !== "" && spacing.trim() !== "" && Number.isFinite(spacingValue) && spacingValue > 0;
 
+  function invalidatePreview() {
+    requestId.current += 1;
+    setPreview(null);
+    setMessage(null);
+  }
+
+  function handleFieldChange(value: string) {
+    invalidatePreview();
+    setFieldId(value);
+  }
+
+  function handleSpacingChange(value: string) {
+    invalidatePreview();
+    setSpacing(value);
+  }
+
   async function generate() {
     if (!canGenerate) return;
+    const currentRequest = (requestId.current += 1);
     setMessage(null);
     setGenerating(true);
     try {
       const result = await api.samplingGridPreview(tenantId, propertyId, fieldId, spacingValue);
+      if (currentRequest !== requestId.current) return;
       setPreview(result);
     } catch (error) {
+      if (currentRequest !== requestId.current) return;
       setPreview(null);
       if (error instanceof SoilApiError) {
         if (error.status === 403) return setMessage("Sem permissão para ver a prévia de amostragem.");
@@ -52,8 +72,10 @@ export function SamplingPreview({ fields, tenantId, propertyId, api }: {
     const link = document.createElement("a");
     link.href = url;
     link.download = `amostragem-previa-${preview.field_id}.geojson`;
+    document.body.appendChild(link);
     link.click();
-    URL.revokeObjectURL(url);
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
   const coordinates = preview?.points.features.map((feature) => feature.geometry.coordinates) ?? [];
@@ -64,7 +86,7 @@ export function SamplingPreview({ fields, tenantId, propertyId, api }: {
       <p>{PREVIEW_WARNING}</p>
       <label>
         Talhão
-        <select value={fieldId} onChange={(e) => setFieldId(e.target.value)}>
+        <select value={fieldId} onChange={(e) => handleFieldChange(e.target.value)}>
           <option value="">Escolha…</option>
           {fields.map((field) => (
             <option key={field.id} value={field.id}>{field.name}</option>
@@ -78,7 +100,7 @@ export function SamplingPreview({ fields, tenantId, propertyId, api }: {
           inputMode="decimal"
           min="0"
           value={spacing}
-          onChange={(e) => setSpacing(e.target.value)}
+          onChange={(e) => handleSpacingChange(e.target.value)}
         />
       </label>
       <button type="button" disabled={!canGenerate || generating} onClick={() => void generate()}>
