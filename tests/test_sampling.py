@@ -271,6 +271,27 @@ class SuggestGridSamplePointsTest(unittest.TestCase):
                 "field-1", SQUARE_METRES_GEOJSON, PROJECTED_CRS, -5.0
             )
 
+    def test_rejects_nan_spacing(self) -> None:
+        with self.assertRaises(SamplingValidationError) as ctx:
+            suggest_grid_sample_points(
+                "field-1", SQUARE_METRES_GEOJSON, PROJECTED_CRS, float("nan")
+            )
+        self.assertIn("finite", str(ctx.exception))
+
+    def test_rejects_inf_spacing(self) -> None:
+        with self.assertRaises(SamplingValidationError) as ctx:
+            suggest_grid_sample_points(
+                "field-1", SQUARE_METRES_GEOJSON, PROJECTED_CRS, float("inf")
+            )
+        self.assertIn("finite", str(ctx.exception))
+
+    def test_rejects_negative_inf_spacing(self) -> None:
+        with self.assertRaises(SamplingValidationError) as ctx:
+            suggest_grid_sample_points(
+                "field-1", SQUARE_METRES_GEOJSON, PROJECTED_CRS, float("-inf")
+            )
+        self.assertIn("finite", str(ctx.exception))
+
     def test_same_input_yields_same_output(self) -> None:
         first = suggest_grid_sample_points(
             "field-1", SQUARE_METRES_GEOJSON, PROJECTED_CRS, 25.0,
@@ -1011,3 +1032,27 @@ class LonLatGridSamplingTest(unittest.TestCase):
             suggest_grid_sample_points_for_lonlat_field(
                 "field-1", polygon, 1.0, max_points=16
             )
+
+    def test_rejects_nan_spacing(self) -> None:
+        polygon = self._lonlat_square_from_metres()
+        with self.assertRaises(SamplingValidationError) as ctx:
+            suggest_grid_sample_points_for_lonlat_field(
+                "field-1", polygon, float("nan")
+            )
+        self.assertIn("finite", str(ctx.exception))
+
+    def test_rejects_inf_spacing(self) -> None:
+        polygon = self._lonlat_square_from_metres()
+        with self.assertRaises(SamplingValidationError) as ctx:
+            suggest_grid_sample_points_for_lonlat_field(
+                "field-1", polygon, float("inf")
+            )
+        self.assertIn("finite", str(ctx.exception))
+
+    def test_rejects_negative_inf_spacing(self) -> None:
+        polygon = self._lonlat_square_from_metres()
+        with self.assertRaises(SamplingValidationError) as ctx:
+            suggest_grid_sample_points_for_lonlat_field(
+                "field-1", polygon, float("-inf")
+            )
+        self.assertIn("finite", str(ctx.exception))

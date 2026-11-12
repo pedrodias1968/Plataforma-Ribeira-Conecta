@@ -165,6 +165,24 @@ class SamplingPreviewApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 422)
 
+    def test_preview_rejects_nan_spacing(self) -> None:
+        field_id = self._create_field(self.property.id)
+        response = self.client.get(
+            self._preview_path(self.property.id, field_id, float("nan")),
+            headers={"Authorization": "Bearer admin"},
+        )
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("finite", response.text)
+
+    def test_preview_rejects_inf_spacing(self) -> None:
+        field_id = self._create_field(self.property.id)
+        response = self.client.get(
+            self._preview_path(self.property.id, field_id, float("inf")),
+            headers={"Authorization": "Bearer admin"},
+        )
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("finite", response.text)
+
     def test_preview_rejects_oversized_grid(self) -> None:
         field_id = self._create_field(self.property.id)
         response = self.client.get(

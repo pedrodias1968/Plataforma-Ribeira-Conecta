@@ -168,6 +168,8 @@ def suggest_grid_sample_points(
     """
     if not isinstance(spacing_m, (int, float)) or isinstance(spacing_m, bool):
         raise SamplingValidationError("spacing_m must be a positive number")
+    if not math.isfinite(spacing_m):
+        raise SamplingValidationError("spacing_m must be a finite number")
     if spacing_m <= 0:
         raise SamplingValidationError("spacing_m must be greater than zero")
 
