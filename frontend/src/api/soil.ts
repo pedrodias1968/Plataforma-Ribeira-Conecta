@@ -1,3 +1,5 @@
+import type { FeatureCollection, Point } from "geojson";
+
 export interface SoilSamplePoint {
   id: string;
   tenant_id: string;
@@ -80,6 +82,17 @@ export class SoilApiError extends Error {
   }
 }
 
+/** Read-only preview of a suggested sampling grid. The points are DERIVED_LOCATION, never observations. */
+export interface SamplingGridPreview {
+  field_id: string;
+  property_id: string;
+  status: string;
+  projected_crs: string;
+  spacing_m: number;
+  derivation_method: string;
+  points: FeatureCollection<Point>;
+}
+
 export class SoilApi {
   constructor(
     private readonly baseUrl: string,
@@ -130,5 +143,16 @@ export class SoilApi {
       method: "POST",
       body: JSON.stringify({ ...payload, classification: "MANUAL_CONFIRMED" }),
     });
+  }
+
+  samplingGridPreview(
+    tenantId: string,
+    propertyId: string,
+    fieldId: string,
+    spacingM: number,
+  ): Promise<SamplingGridPreview> {
+    return this.send<SamplingGridPreview>(
+      `${this.tenant(tenantId)}/properties/${encodeURIComponent(propertyId)}/fields/${encodeURIComponent(fieldId)}/sampling/grid-preview?spacing_m=${spacingM}`,
+    );
   }
 }

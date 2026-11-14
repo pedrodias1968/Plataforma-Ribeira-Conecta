@@ -69,6 +69,10 @@ from .harvest import HarvestConflict
 from .object_storage import ObjectStorageError
 from .postgres import PostgresStore
 from .raster_tiles import InvalidTile, RasterUnavailable, render_ndvi_tile
+from .sampling import (
+    sample_points_to_feature_collection,
+    suggest_grid_sample_points_for_lonlat_field,
+)
 from .service import BoundaryImportConflict, RibeiraApplication
 from .storage import SQLiteStore
 
@@ -1782,6 +1786,36 @@ def create_app(
         return {
             "property_id": property_id,
             "items": [safe_soil_sample_point(item) for item in items],
+        }
+
+    @app.get(
+        "/v1/tenants/{tenant_id}/properties/{property_id}/fields/{field_id}/sampling/grid-preview",
+        tags=["farm-360", "soil"],
+    )
+    async def preview_field_sampling_grid(
+        tenant_id: str,
+        property_id: str,
+        field_id: str,
+        spacing_m: float,
+        ctx: AuthContext = Depends(context),
+    ):
+        authorize(ctx, "soil:read", tenant_id)
+        field = application.fields.get(
+            tenant_id, field_id, platform_admin=ctx.is_platform_admin
+        )
+        if field.property_id != property_id:
+            raise LookupError("field context not found in property")
+        projected_crs, points = suggest_grid_sample_points_for_lonlat_field(
+            field_id, field.geometry_geojson, spacing_m
+        )
+        return {
+            "field_id": field_id,
+            "property_id": property_id,
+            "status": "PREVIEW_NOT_PERSISTED",
+            "projected_crs": projected_crs,
+            "spacing_m": spacing_m,
+            "derivation_method": "REGULAR_GRID",
+            "points": sample_points_to_feature_collection(points),
         }
 
     @app.post(
