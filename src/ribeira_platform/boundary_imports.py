@@ -10,7 +10,8 @@ from dataclasses import dataclass
 from io import BytesIO
 from pathlib import PurePath
 from typing import Any
-from xml.etree import ElementTree
+from xml.etree import ElementTree  # nosec B405 - DTD and entity declarations are rejected by the expat pre-scan before parsing
+from xml.parsers import expat
 
 from .boundaries import validate_boundary
 
@@ -220,14 +221,32 @@ def _polygon_from_kml(root: ElementTree.Element) -> dict[str, Any]:
     return {"type": "Polygon", "coordinates": rings}
 
 
+def _reject_xml_declarations(payload: bytes) -> None:
+    """Reject DOCTYPE and ENTITY declarations regardless of payload encoding."""
+    parser = expat.ParserCreate()
+
+    def _reject(name: str, *args: object) -> None:
+        raise ValueError("UNSAFE_KML_XML")
+
+    parser.StartDoctypeDeclHandler = _reject
+    parser.EntityDeclHandler = _reject
+    parser.Parse(payload, True)
+
+
 def parse_kml_import(payload: bytes, declared_crs: str | None) -> ParsedBoundaryImport:
     """Parse one KML Polygon, preserving KML's WGS84 coordinate semantics."""
     if b"<!doctype" in payload.lower() or b"<!entity" in payload.lower():
         return _failed_kml(payload, declared_crs, "UNSAFE_KML_XML")
+    try:
+        _reject_xml_declarations(payload)
+    except ValueError:
+        return _failed_kml(payload, declared_crs, "UNSAFE_KML_XML")
+    except expat.ExpatError:
+        return _failed_kml(payload, declared_crs, "KML_BOUNDARY_VALIDATION_FAILED")
     if declared_crs and declared_crs.upper() not in {"EPSG:4326", "CRS:84"}:
         return _failed_kml(payload, declared_crs, "KML_CRS_CONFLICT")
     try:
-        root = ElementTree.fromstring(payload)
+        root = ElementTree.fromstring(payload)  # nosec B314 - DTD and entity declarations are rejected by the expat pre-scan before parsing
         geometry = _polygon_from_kml(root)
         validated, _, geometry_checksum = validate_boundary(geometry, "EPSG:4326")
     except (ElementTree.ParseError, ValueError) as exc:
