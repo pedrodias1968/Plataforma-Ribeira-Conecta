@@ -205,7 +205,7 @@ class StockRepository:
         p = self.placeholder
         self._execute(
             f"INSERT INTO stock_movement ({', '.join(STOCK_COLUMNS)}) "
-            f"VALUES ({', '.join([p] * len(STOCK_COLUMNS))})",
+            f"VALUES ({', '.join([p] * len(STOCK_COLUMNS))})",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
             [
                 item.id,
                 item.tenant_id,
@@ -252,7 +252,7 @@ class StockRepository:
         p = self.placeholder
         row = self._execute(
             f"SELECT {', '.join(STOCK_COLUMNS)} FROM stock_movement "
-            f"WHERE tenant_id = {p} AND id = {p}",
+            f"WHERE tenant_id = {p} AND id = {p}",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
             [tenant_id, movement_id],
         ).fetchone()
         return self._hydrate(row) if row else None
@@ -261,7 +261,7 @@ class StockRepository:
         p = self.placeholder
         return (
             self._execute(
-                f"SELECT 1 FROM stock_movement WHERE tenant_id = {p} AND supersedes_id = {p}",
+                f"SELECT 1 FROM stock_movement WHERE tenant_id = {p} AND supersedes_id = {p}",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
                 [tenant_id, movement_id],
             ).fetchone()
             is not None
@@ -293,7 +293,7 @@ class StockRepository:
         rows = self._execute(
             f"SELECT {', '.join('r.' + c for c in STOCK_COLUMNS)} FROM stock_movement r "
             f"WHERE {' AND '.join(clauses)} "
-            "ORDER BY r.movement_date DESC, r.created_at DESC, r.id",
+            "ORDER BY r.movement_date DESC, r.created_at DESC, r.id",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
             params,
         ).fetchall()
         return [self._hydrate(row) for row in rows]

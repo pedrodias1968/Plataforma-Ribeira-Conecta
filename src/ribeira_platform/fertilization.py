@@ -91,7 +91,10 @@ def validate_application(
         )
     amount: float | None = None
     if quantity is not None:
-        assert quantity_unit is not None
+        if quantity_unit is None:
+            raise FertilizationValidationError(
+                "quantity_unit is required when quantity is informed"
+            )
         if quantity_unit not in QUANTITY_UNITS:
             raise FertilizationValidationError(
                 f"quantity_unit must be one of {', '.join(QUANTITY_UNITS)}"
@@ -258,7 +261,7 @@ class FertilizationRepository:
         p = self.placeholder
         self._execute(
             f"INSERT INTO fertilization_record ({', '.join(COLUMNS)}) "
-            f"VALUES ({', '.join([p] * len(COLUMNS))})",
+            f"VALUES ({', '.join([p] * len(COLUMNS))})",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
             [
                 item.id,
                 item.tenant_id,
@@ -287,7 +290,7 @@ class FertilizationRepository:
         p = self.placeholder
         row = self._execute(
             f"SELECT {', '.join(COLUMNS)} FROM fertilization_record "
-            f"WHERE tenant_id = {p} AND id = {p}",
+            f"WHERE tenant_id = {p} AND id = {p}",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
             [tenant_id, record_id],
         ).fetchone()
         return self._hydrate(row) if row else None
@@ -297,7 +300,7 @@ class FertilizationRepository:
         return (
             self._execute(
                 "SELECT 1 FROM fertilization_record "
-                f"WHERE tenant_id = {p} AND supersedes_id = {p}",
+                f"WHERE tenant_id = {p} AND supersedes_id = {p}",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
                 [tenant_id, record_id],
             ).fetchone()
             is not None
@@ -333,7 +336,7 @@ class FertilizationRepository:
         rows = self._execute(
             f"SELECT {', '.join('r.' + column for column in COLUMNS)} "
             f"FROM fertilization_record r WHERE {' AND '.join(clauses)} "
-            "ORDER BY r.application_date DESC, r.created_at DESC, r.id",
+            "ORDER BY r.application_date DESC, r.created_at DESC, r.id",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
             params,
         ).fetchall()
         return [self._hydrate(row) for row in rows]

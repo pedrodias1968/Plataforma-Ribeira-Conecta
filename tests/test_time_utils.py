@@ -17,9 +17,7 @@ class ParseAwareTests(unittest.TestCase):
         parsed = parse_aware("2026-09-11T10:59:10Z")
         self.assertEqual(parsed.tzinfo, timezone.utc)
         self.assertEqual(parsed.utcoffset(), timedelta(0))
-        self.assertEqual(
-            parsed, datetime(2026, 9, 11, 10, 59, 10, tzinfo=timezone.utc)
-        )
+        self.assertEqual(parsed, datetime(2026, 9, 11, 10, 59, 10, tzinfo=timezone.utc))
 
     def test_parses_explicit_utc_offset(self) -> None:
         parsed = parse_aware("2026-09-11T10:59:10+00:00")

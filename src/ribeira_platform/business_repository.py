@@ -518,7 +518,7 @@ class BusinessRepository:
                        geometry,geometry_crs,source_reference,observed_at,context,data_classification)
                      VALUES ({p},{p},{p},{p},{p},{p},{p},{p},
                        CASE WHEN {p}::text IS NULL THEN NULL ELSE ST_SetSRID(ST_GeomFromGeoJSON({p}::text),4326) END,
-                       {p},{p},{p},{p}::jsonb,{p})""",
+                       {p},{p},{p},{p}::jsonb,{p})""",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
                 [
                     item.id,
                     item.tenant_id,

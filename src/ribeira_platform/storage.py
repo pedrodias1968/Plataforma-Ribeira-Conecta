@@ -699,7 +699,7 @@ class SQLiteStore:
         if evidence_ids:
             marks = ",".join("?" for _ in evidence_ids)
             count = self.connection.execute(
-                f"SELECT count(*) FROM evidence WHERE tenant_id=? AND id IN ({marks})",
+                f"SELECT count(*) FROM evidence WHERE tenant_id=? AND id IN ({marks})",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
                 [tenant_id, *evidence_ids],
             ).fetchone()[0]
             if count != len(set(evidence_ids)):

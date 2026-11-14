@@ -104,7 +104,7 @@ class InmetWis2HttpProvider:
         raw: bytes | None = None
         for attempt in range(self.max_retries + 1):
             try:
-                with urlopen(request, timeout=self.timeout_seconds) as response:  # noqa: S310 -- fixed official host above
+                with urlopen(request, timeout=self.timeout_seconds) as response:  # noqa: S310 -- fixed official host above  # nosec B310 - fixed official HTTPS endpoint defined in code
                     raw = response.read(self.max_response_bytes + 1)
                 break
             except HTTPError as exc:
@@ -405,7 +405,7 @@ class SidraPamProvider:
                 "User-Agent": "RibeiraConecta/1.0 official-public-data",
             },
         )
-        with urlopen(request, timeout=self.timeout_seconds) as response:  # noqa: S310 -- approved HTTPS host above
+        with urlopen(request, timeout=self.timeout_seconds) as response:  # noqa: S310 -- approved HTTPS host above  # nosec B310 - fixed official HTTPS endpoint defined in code
             raw = response.read(2_000_001)
         if len(raw) > 2_000_000:
             raise ValueError("SIDRA response exceeds bounded size")

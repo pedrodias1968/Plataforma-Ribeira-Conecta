@@ -1244,7 +1244,7 @@ class PostgresStore:
                  LEFT JOIN property p ON ta.property_id=p.id
                  LEFT JOIN asset a ON ta.asset_id=a.id
                 WHERE {where_clause}
-                ORDER BY ta.assessed_at DESC""",
+                ORDER BY ta.assessed_at DESC""",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
             tuple(params),
         ).fetchall()
         result = []
@@ -1488,7 +1488,7 @@ class PostgresStore:
                       ST_AsGeoJSON(geometry) AS geometry_geojson,geometry_checksum,boundary_source,
                       data_classification,warnings,status,created_by,expected_property_checksum,
                       created_at,reviewed_by,review_reason,approved_boundary_version,reviewed_at
-               FROM boundary_import WHERE tenant_id=%s AND id=%s"""
+               FROM boundary_import WHERE tenant_id=%s AND id=%s"""  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
             + suffix,
             (tenant_id, import_id),
         )

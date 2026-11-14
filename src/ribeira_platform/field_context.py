@@ -503,7 +503,8 @@ class FieldContextApplication:
                 reason=reason,
                 actor=actor,
             )
-            assert item.boundary_version_id is not None
+            if item.boundary_version_id is None:
+                raise RuntimeError("boundary version was not created")
             evidence = self.store.create_evidence(
                 Evidence(
                     id=new_id(),

@@ -877,7 +877,8 @@ class GeospatialRepository:
             if result.rowcount != 1:
                 return None
             row = self._one(
-                f"SELECT * FROM processing_job WHERE id={p}", [candidate["id"]]
+                f"SELECT * FROM processing_job WHERE id={p}",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
+                [candidate["id"]],
             )
         if row is None:
             return None

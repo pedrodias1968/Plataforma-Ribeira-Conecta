@@ -126,9 +126,7 @@ class DatabaseQueueCheckTests(unittest.TestCase):
 class ObjectStorageCheckTests(unittest.TestCase):
     def test_writable_directory_is_ready(self) -> None:
         with TemporaryDirectory() as directory:
-            with patch.dict(
-                os.environ, {"RIBEIRA_OBJECT_STORAGE_ROOT": directory}
-            ):
+            with patch.dict(os.environ, {"RIBEIRA_OBJECT_STORAGE_ROOT": directory}):
                 result = runtime_health.check("storage")
         self.assertEqual(result["checks"], {"object_storage_ready": True})
         self.assertEqual(result["status"], "ready")

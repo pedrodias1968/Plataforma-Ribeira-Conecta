@@ -149,7 +149,9 @@ class EndpointAllowedTests(unittest.TestCase):
         self.assertTrue(
             registry.endpoint_allowed("alpha", "https://catalog.example.com/api/items")
         )
-        self.assertTrue(registry.endpoint_allowed("alpha", "https://catalog.example.com/api"))
+        self.assertTrue(
+            registry.endpoint_allowed("alpha", "https://catalog.example.com/api")
+        )
 
     def test_provider_without_endpoints_allows_none(self) -> None:
         metadata = _metadata(provider_id="alpha", endpoint=None, catalog_endpoint=None)

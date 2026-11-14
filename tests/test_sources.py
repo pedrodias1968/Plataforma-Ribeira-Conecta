@@ -5,7 +5,11 @@ import unittest
 import urllib.error
 from unittest.mock import patch
 
-from ribeira_platform.epistemology import DataClassification, IngestionStatus, QualityFlag
+from ribeira_platform.epistemology import (
+    DataClassification,
+    IngestionStatus,
+    QualityFlag,
+)
 from ribeira_platform.models import FetchResult, Observation, Property, Source
 from ribeira_platform.providers import ProviderMetadata, ProviderRegistry
 from ribeira_platform.security import SSRFBlocked
@@ -135,9 +139,7 @@ class ParseObservationsTests(unittest.TestCase):
                 )
             ]
         }
-        observations = _parse_observations(
-            payload, "tenant-1", _property(), _source()
-        )
+        observations = _parse_observations(payload, "tenant-1", _property(), _source())
         self.assertEqual(len(observations), 1)
         observation = observations[0]
         self.assertIsInstance(observation, Observation)
@@ -189,9 +191,7 @@ class ParseObservationsTests(unittest.TestCase):
         payload = {
             "observations": [_valid_observation(value=None, quality_flag="VALID")]
         }
-        observations = _parse_observations(
-            payload, "tenant-1", _property(), _source()
-        )
+        observations = _parse_observations(payload, "tenant-1", _property(), _source())
         self.assertIsNone(observations[0].value)
         self.assertEqual(observations[0].quality_flag, QualityFlag.UNKNOWN)
 
@@ -199,16 +199,12 @@ class ParseObservationsTests(unittest.TestCase):
         payload = {
             "observations": [_valid_observation(value=None, quality_flag="INVALID")]
         }
-        observations = _parse_observations(
-            payload, "tenant-1", _property(), _source()
-        )
+        observations = _parse_observations(payload, "tenant-1", _property(), _source())
         self.assertEqual(observations[0].quality_flag, QualityFlag.INVALID)
 
     def test_null_unit_is_preserved_as_none(self) -> None:
         payload = {"observations": [_valid_observation(unit=None)]}
-        observations = _parse_observations(
-            payload, "tenant-1", _property(), _source()
-        )
+        observations = _parse_observations(payload, "tenant-1", _property(), _source())
         self.assertIsNone(observations[0].unit)
 
     def test_naive_timestamp_is_rejected(self) -> None:
@@ -229,9 +225,7 @@ class ParseObservationsTests(unittest.TestCase):
 class SyntheticFixtureAdapterTests(unittest.TestCase):
     def test_marks_observations_and_result_as_simulated(self) -> None:
         adapter = SyntheticFixtureAdapter([_valid_observation()])
-        result = adapter.fetch_property_observations(
-            "tenant-1", _property(), _source()
-        )
+        result = adapter.fetch_property_observations("tenant-1", _property(), _source())
         self.assertEqual(result.status, IngestionStatus.INGESTED)
         self.assertEqual(result.source_classification, DataClassification.SIMULATED)
         self.assertEqual(len(result.observations), 1)
@@ -244,9 +238,7 @@ class SyntheticFixtureAdapterTests(unittest.TestCase):
     def test_defaults_synthetic_data_flag_to_true(self) -> None:
         adapter = SyntheticFixtureAdapter([])
         self.assertTrue(adapter.synthetic_data)
-        result = adapter.fetch_property_observations(
-            "tenant-1", _property(), _source()
-        )
+        result = adapter.fetch_property_observations("tenant-1", _property(), _source())
         self.assertEqual(result.status, IngestionStatus.INGESTED)
         self.assertEqual(result.observations, [])
 
@@ -286,9 +278,9 @@ class HttpJsonSourceAdapterTests(unittest.TestCase):
         self.assertEqual(result.observations, [])
 
     def test_network_policy_block_returns_source_unavailable(self) -> None:
-        result = _adapter(policy=_BlockingPolicy("private network")).fetch_property_observations(
-            "tenant-1", _property(), _source()
-        )
+        result = _adapter(
+            policy=_BlockingPolicy("private network")
+        ).fetch_property_observations("tenant-1", _property(), _source())
         self.assertEqual(result.status, IngestionStatus.SOURCE_UNAVAILABLE)
         self.assertEqual(result.observations, [])
         self.assertIn("network policy", result.message)

@@ -419,7 +419,7 @@ class SalesRepository:
         p = self.placeholder
         self._execute(
             f"INSERT INTO {table} ({', '.join(columns)}) "
-            f"VALUES ({', '.join([p] * len(columns))})",
+            f"VALUES ({', '.join([p] * len(columns))})",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
             values,
         )
 
@@ -475,7 +475,7 @@ class SalesRepository:
         p = self.placeholder
         row = self._execute(
             f"SELECT {', '.join(SALE_COLUMNS)} FROM sale_record "
-            f"WHERE tenant_id = {p} AND id = {p}",
+            f"WHERE tenant_id = {p} AND id = {p}",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
             [tenant_id, sale_id],
         ).fetchone()
         return self._hydrate_sale(row) if row else None
@@ -484,7 +484,7 @@ class SalesRepository:
         p = self.placeholder
         row = self._execute(
             f"SELECT {', '.join(PAYMENT_COLUMNS)} FROM payment_record "
-            f"WHERE tenant_id = {p} AND id = {p}",
+            f"WHERE tenant_id = {p} AND id = {p}",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
             [tenant_id, payment_id],
         ).fetchone()
         return self._hydrate_payment(row) if row else None
@@ -493,7 +493,7 @@ class SalesRepository:
         p = self.placeholder
         return (
             self._execute(
-                f"SELECT 1 FROM {table} WHERE tenant_id = {p} AND supersedes_id = {p}",
+                f"SELECT 1 FROM {table} WHERE tenant_id = {p} AND supersedes_id = {p}",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
                 [tenant_id, record_id],
             ).fetchone()
             is not None
@@ -532,13 +532,13 @@ class SalesRepository:
         if not include_superseded:
             clauses.append(
                 f"NOT EXISTS (SELECT 1 FROM {table} s "
-                "WHERE s.tenant_id = r.tenant_id AND s.supersedes_id = r.id)"
+                "WHERE s.tenant_id = r.tenant_id AND s.supersedes_id = r.id)"  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
             )
         return list(
             self._execute(
                 f"SELECT {', '.join('r.' + column for column in columns)} "
                 f"FROM {table} r WHERE {' AND '.join(clauses)} "
-                f"ORDER BY r.{date_column} DESC, r.created_at DESC, r.id",
+                f"ORDER BY r.{date_column} DESC, r.created_at DESC, r.id",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
                 params,
             ).fetchall()
         )

@@ -12,7 +12,7 @@ dependencies = [
   "uvicorn[standard]==0.34.0",
   "pydantic==2.10.5",
   "psycopg[binary]==3.2.3",
-  "PyJWT[crypto]==2.14.0",
+  "PyJWT[crypto]==2.15.0",
   "prometheus-client==0.21.1",
   "boto3==1.40.30",
   "numpy==2.2.3",

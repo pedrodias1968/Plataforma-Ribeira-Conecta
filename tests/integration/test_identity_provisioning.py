@@ -642,18 +642,30 @@ class IdentityProvisioningPostgresTests(unittest.TestCase):
         self.provision(request)
         user_id = self.user_id(request)
 
-        dry = self.role_change(tenant.id, "VIEWER", "MANAGER", subject=request.external_subject, dry_run=True)
+        dry = self.role_change(
+            tenant.id,
+            "VIEWER",
+            "MANAGER",
+            subject=request.external_subject,
+            dry_run=True,
+        )
         self.assertEqual((dry.action, dry.audit), ("WOULD_CHANGE", "WOULD_WRITE"))
         self.assertEqual(self.memberships(tenant.id, user_id), [("VIEWER", "ACTIVE")])
 
-        changed = self.role_change(tenant.id, "VIEWER", "MANAGER", subject=request.external_subject)
+        changed = self.role_change(
+            tenant.id, "VIEWER", "MANAGER", subject=request.external_subject
+        )
         self.assertEqual((changed.action, changed.audit), ("CHANGED", "WRITTEN"))
         self.assertEqual(
             self.memberships(tenant.id, user_id),
             [("MANAGER", "ACTIVE"), ("VIEWER", "REVOKED")],
         )
-        repeated = self.role_change(tenant.id, "VIEWER", "MANAGER", subject=request.external_subject)
-        self.assertEqual((repeated.action, repeated.audit), ("NO_CHANGE", "NOT_WRITTEN"))
+        repeated = self.role_change(
+            tenant.id, "VIEWER", "MANAGER", subject=request.external_subject
+        )
+        self.assertEqual(
+            (repeated.action, repeated.audit), ("NO_CHANGE", "NOT_WRITTEN")
+        )
         with self.store.tenant_transaction(tenant.id):
             audits = self.store.connection.execute(
                 "SELECT payload FROM audit_log WHERE event_type='IDENTITY_MEMBERSHIP_ROLE_CHANGED' AND entity_id=%s",
@@ -664,7 +676,9 @@ class IdentityProvisioningPostgresTests(unittest.TestCase):
 
         # The historical VIEWER membership is never reactivated implicitly.
         with self.assertRaises(ProvisioningConflict):
-            self.role_change(tenant.id, "MANAGER", "VIEWER", subject=request.external_subject)
+            self.role_change(
+                tenant.id, "MANAGER", "VIEWER", subject=request.external_subject
+            )
 
     def test_role_change_is_idempotent_and_requires_existing_identity(self) -> None:
         tenant = self.tenant("Synthetic role change mismatch tenant")
@@ -672,10 +686,14 @@ class IdentityProvisioningPostgresTests(unittest.TestCase):
         self.provision(request)
         self.user_id(request)
         # Already in the requested role: idempotent, nothing written.
-        same = self.role_change(tenant.id, "MANAGER", "VIEWER", subject=request.external_subject)
+        same = self.role_change(
+            tenant.id, "MANAGER", "VIEWER", subject=request.external_subject
+        )
         self.assertEqual((same.action, same.audit), ("NO_CHANGE", "NOT_WRITTEN"))
         with self.assertRaises(ProvisioningNotFound):
-            self.role_change(tenant.id, "VIEWER", "MANAGER", subject="provider|synthetic-missing")
+            self.role_change(
+                tenant.id, "VIEWER", "MANAGER", subject="provider|synthetic-missing"
+            )
 
 
 if __name__ == "__main__":

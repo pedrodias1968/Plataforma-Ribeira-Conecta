@@ -67,7 +67,7 @@ class SentinelHubClient:
         try:
             with urllib.request.urlopen(
                 request, timeout=self._timeout_seconds
-            ) as response:
+            ) as response:  # nosec B310 - fixed official HTTPS endpoint defined in code
                 document = json.loads(response.read())
         except (
             urllib.error.URLError,
@@ -93,7 +93,7 @@ class SentinelHubClient:
         try:
             with urllib.request.urlopen(
                 request, timeout=self._timeout_seconds
-            ) as response:
+            ) as response:  # nosec B310 - fixed official HTTPS endpoint defined in code
                 content_type = response.headers.get_content_type()
                 payload_bytes = response.read()
         except (urllib.error.URLError, urllib.error.HTTPError) as exc:

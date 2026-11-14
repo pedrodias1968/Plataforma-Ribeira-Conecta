@@ -183,6 +183,36 @@ class KmlBoundaryImportParsingTests(unittest.TestCase):
             parse_kmz_import(b"not-a-zip", None).failure_code, "INVALID_KMZ"
         )
 
+    def test_kml_rejects_doctype_and_entity_in_utf16(self) -> None:
+        unsafe = (
+            '<?xml version="1.0" encoding="UTF-16"?>'
+            '<!DOCTYPE kml [<!ENTITY x "boom">]>'
+            '<kml xmlns="http://www.opengis.net/kml/2.2"><Placemark><Polygon>'
+            "<outerBoundaryIs><LinearRing><coordinates>"
+            "-47.0,-24.0 &x; -46.99,-24.0 -46.99,-24.01 -47.0,-24.01 -47.0,-24.0"
+            "</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark></kml>"
+        )
+        self.assertEqual(
+            parse_kml_import(unsafe.encode("utf-16"), None).failure_code,
+            "UNSAFE_KML_XML",
+        )
+        self.assertEqual(
+            parse_kml_import(unsafe.encode("utf-16-le"), None).failure_code,
+            "UNSAFE_KML_XML",
+        )
+
+    def test_kml_utf16_valid_polygon_is_accepted(self) -> None:
+        kml = KML_POLYGON.decode("utf-8").replace("UTF-8", "UTF-16").encode("utf-16")
+        parsed = parse_kml_import(kml, None)
+        self.assertEqual(parsed.status, "NEEDS_REVIEW")
+        self.assertEqual(parsed.geometry, POLYGON)
+
+    def test_kml_malformed_xml_is_failed(self) -> None:
+        self.assertEqual(
+            parse_kml_import(b"<kml><Placemark>", None).failure_code,
+            "KML_BOUNDARY_VALIDATION_FAILED",
+        )
+
     def test_filename_formats_are_explicit(self) -> None:
         self.assertEqual(boundary_import_format("boundary.kml"), "KML")
         self.assertEqual(boundary_import_format("boundary.kmz"), "KMZ")

@@ -32,17 +32,13 @@ class PolicyDefaultsTests(unittest.TestCase):
         self.assertEqual(self.policy.accepted_classes, (4, 5, 6))
 
     def test_default_excluded_classes(self) -> None:
-        self.assertEqual(
-            self.policy.excluded_classes, (0, 1, 2, 3, 7, 8, 9, 10, 11)
-        )
+        self.assertEqual(self.policy.excluded_classes, (0, 1, 2, 3, 7, 8, 9, 10, 11))
 
     def test_default_optional_classes(self) -> None:
         self.assertEqual(self.policy.optional_classes, (7,))
 
     def test_accepted_and_excluded_are_disjoint(self) -> None:
-        overlap = set(self.policy.accepted_classes) & set(
-            self.policy.excluded_classes
-        )
+        overlap = set(self.policy.accepted_classes) & set(self.policy.excluded_classes)
         self.assertEqual(overlap, set())
 
     def test_optional_classes_are_a_subset_of_excluded(self) -> None:
@@ -119,9 +115,7 @@ class AcceptsTests(unittest.TestCase):
             excluded_classes=(5, 6),
         )
         mask = policy.accepts(np.array([4, 5, 6], dtype="uint8"))
-        np.testing.assert_array_equal(
-            mask, np.array([True, False, False])
-        )
+        np.testing.assert_array_equal(mask, np.array([True, False, False]))
 
 
 class RecordTests(unittest.TestCase):
@@ -133,9 +127,7 @@ class RecordTests(unittest.TestCase):
         self.assertIsInstance(self.record, dict)
 
     def test_record_reports_identity(self) -> None:
-        self.assertEqual(
-            self.record["policy_id"], "SENTINEL2_SCL_CONSERVATIVE_V1"
-        )
+        self.assertEqual(self.record["policy_id"], "SENTINEL2_SCL_CONSERVATIVE_V1")
         self.assertEqual(self.record["version"], 1)
         self.assertEqual(self.record["scl_asset_key"], "SCL_20m")
 

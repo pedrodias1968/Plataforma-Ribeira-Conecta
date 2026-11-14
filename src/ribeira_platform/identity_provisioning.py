@@ -406,7 +406,9 @@ class IdentityProvisioningService:
             if any(str(row["role_id"]) == new_id_value for row in memberships):
                 # A historical membership with the new role exists; it is never
                 # reactivated implicitly.
-                raise ProvisioningConflict("a previous membership with the new role exists")
+                raise ProvisioningConflict(
+                    "a previous membership with the new role exists"
+                )
             if dry_run:
                 return RoleChangeResult(
                     request.expected_role,
@@ -422,7 +424,9 @@ class IdentityProvisioningService:
                 (request.tenant_id, identity["id"], roles[request.expected_role]),
             )
             if updated.rowcount != 1:
-                raise ProvisioningConflict("membership state changed before role change")
+                raise ProvisioningConflict(
+                    "membership state changed before role change"
+                )
             self.store.connection.execute(
                 """INSERT INTO tenant_membership(tenant_id,user_id,role_id,status)
                    VALUES (%s,%s,%s,'ACTIVE')""",

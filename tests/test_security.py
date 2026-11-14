@@ -19,7 +19,10 @@ from ribeira_platform.security import NetworkPolicy, SSRFBlocked
 
 
 def _addrinfo(*addresses: str, port: int = 443):
-    return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, port)) for address in addresses]
+    return [
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, port))
+        for address in addresses
+    ]
 
 
 class NetworkPolicyValidateTests(unittest.TestCase):

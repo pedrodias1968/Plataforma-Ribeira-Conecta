@@ -175,7 +175,8 @@ def validate_harvest_discard(
 
 def clean_required(value: str, label: str) -> str:
     cleaned = _clean_text(value, label=label, required=True)
-    assert cleaned is not None
+    if cleaned is None:
+        raise HarvestValidationError(f"{label} is required")
     return cleaned
 
 
@@ -380,7 +381,7 @@ class HarvestRepository:
         p = self.placeholder
         self._execute(
             f"INSERT INTO {table} ({', '.join(columns)}) "
-            f"VALUES ({', '.join([p] * len(columns))})",
+            f"VALUES ({', '.join([p] * len(columns))})",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
             values,
         )
 
@@ -435,7 +436,7 @@ class HarvestRepository:
         p = self.placeholder
         row = self._execute(
             f"SELECT {', '.join(RECORD_COLUMNS)} FROM harvest_record "
-            f"WHERE tenant_id = {p} AND id = {p}",
+            f"WHERE tenant_id = {p} AND id = {p}",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
             [tenant_id, record_id],
         ).fetchone()
         return self._hydrate_record(row) if row else None
@@ -444,7 +445,7 @@ class HarvestRepository:
         p = self.placeholder
         row = self._execute(
             f"SELECT {', '.join(DISCARD_COLUMNS)} FROM harvest_discard "
-            f"WHERE tenant_id = {p} AND id = {p}",
+            f"WHERE tenant_id = {p} AND id = {p}",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
             [tenant_id, discard_id],
         ).fetchone()
         return self._hydrate_discard(row) if row else None
@@ -453,7 +454,7 @@ class HarvestRepository:
         p = self.placeholder
         return (
             self._execute(
-                f"SELECT 1 FROM harvest_record WHERE tenant_id = {p} AND supersedes_id = {p}",
+                f"SELECT 1 FROM harvest_record WHERE tenant_id = {p} AND supersedes_id = {p}",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
                 [tenant_id, record_id],
             ).fetchone()
             is not None
@@ -463,7 +464,7 @@ class HarvestRepository:
         p = self.placeholder
         return (
             self._execute(
-                f"SELECT 1 FROM harvest_discard WHERE tenant_id = {p} AND supersedes_id = {p}",
+                f"SELECT 1 FROM harvest_discard WHERE tenant_id = {p} AND supersedes_id = {p}",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
                 [tenant_id, discard_id],
             ).fetchone()
             is not None
@@ -496,12 +497,12 @@ class HarvestRepository:
         if not include_superseded:
             clauses.append(
                 f"NOT EXISTS (SELECT 1 FROM {table} s "
-                "WHERE s.tenant_id = r.tenant_id AND s.supersedes_id = r.id)"
+                "WHERE s.tenant_id = r.tenant_id AND s.supersedes_id = r.id)"  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
             )
         cursor = self._execute(
             f"SELECT {', '.join('r.' + column for column in columns)} "
             f"FROM {table} r WHERE {' AND '.join(clauses)} "
-            f"ORDER BY r.{date_column} DESC, r.created_at DESC, r.id",
+            f"ORDER BY r.{date_column} DESC, r.created_at DESC, r.id",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
             params,
         )
         return list(cursor.fetchall())

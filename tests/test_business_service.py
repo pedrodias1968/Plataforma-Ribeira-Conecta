@@ -195,9 +195,7 @@ class OpportunityQualificationTests(unittest.TestCase):
 class CreateCustomerTests(unittest.TestCase):
     def test_create_customer_persists_confirmed_record_and_audits(self) -> None:
         app, store, repository = _application()
-        customer = app.create_customer(
-            "tenant-1", "Fazenda Ribeira", actor="operator"
-        )
+        customer = app.create_customer("tenant-1", "Fazenda Ribeira", actor="operator")
         self.assertEqual(customer.tenant_id, "tenant-1")
         self.assertEqual(customer.display_name, "Fazenda Ribeira")
         self.assertEqual(customer.classification, CommercialClassification.CONFIRMED)
@@ -222,9 +220,7 @@ class RegisterAssetTests(unittest.TestCase):
         self.assertEqual(repository.assets, [asset])
         evidence = store.evidence[(asset.tenant_id, asset.id)]
         self.assertEqual(evidence.evidence_type, "ASSET_REGISTRATION")
-        self.assertEqual(
-            evidence.classification, DataClassification.MANUAL_CONFIRMED
-        )
+        self.assertEqual(evidence.classification, DataClassification.MANUAL_CONFIRMED)
         self.assertEqual(len(store.audits), 1)
         self.assertEqual(store.audits[0][2], "ASSET_REGISTERED")
 
@@ -260,9 +256,7 @@ class AssetForRuleEvaluationTests(unittest.TestCase):
         asset = _asset("tenant-1", property_id="property-1")
         repository.create_asset(asset)
         store.properties[("tenant-1", "property-1")] = object()
-        self.assertIs(
-            app.asset_for_rule_evaluation("tenant-1", asset.id), asset
-        )
+        self.assertIs(app.asset_for_rule_evaluation("tenant-1", asset.id), asset)
 
 
 class SimulatePriceTests(unittest.TestCase):
@@ -423,7 +417,9 @@ class ScoreProspectTests(unittest.TestCase):
             approved_by="approver",
         )
 
-    def _factor(self, key: str, points: int, unknown_policy: str) -> ProspectScoringFactor:
+    def _factor(
+        self, key: str, points: int, unknown_policy: str
+    ) -> ProspectScoringFactor:
         return ProspectScoringFactor(
             id=new_id(),
             tenant_id="tenant-1",
