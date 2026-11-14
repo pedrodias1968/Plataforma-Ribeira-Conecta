@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 
@@ -311,7 +311,9 @@ class SalesSummaryTest(SalesTestBase):
 
     def test_as_of_defaults_to_today(self) -> None:
         summary = self.app.sales_summary(self.tenant.id, self.property.id)
-        self.assertEqual(summary["as_of"], date.today().isoformat())
+        self.assertEqual(
+            summary["as_of"], datetime.now(timezone.utc).date().isoformat()
+        )
 
 
 class SalesApiTest(SalesTestBase):
