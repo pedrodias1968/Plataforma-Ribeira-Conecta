@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import unittest
-from datetime import date
+from datetime import datetime, timezone
 
 import psycopg
 from shapely.geometry import Polygon, mapping
@@ -324,7 +324,9 @@ class SalesPostgresTests(unittest.TestCase):
         self.assertIsNone(rows[unknown.id]["balance_brl"])
         self.assertEqual(summary["outstanding_brl"], 1800.0)
         default_day = self.application.sales_summary(tenant.id, prop.id)
-        self.assertEqual(default_day["as_of"], date.today().isoformat())
+        self.assertEqual(
+            default_day["as_of"], datetime.now(timezone.utc).date().isoformat()
+        )
 
 
 if __name__ == "__main__":
