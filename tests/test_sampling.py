@@ -247,6 +247,52 @@ class SuggestGridSamplePointsTest(unittest.TestCase):
         self.assertTrue(0.0 <= x <= 10.0)
         self.assertTrue(0.0 <= y <= 10.0)
 
+    def test_rejects_degree_extent_with_projected_crs(self) -> None:
+        degree_polygon = {
+            "type": "Polygon",
+            "coordinates": [
+                [
+                    [-47.0, -24.0],
+                    [-46.99, -24.0],
+                    [-46.99, -23.99],
+                    [-47.0, -23.99],
+                    [-47.0, -24.0],
+                ]
+            ],
+        }
+        with self.assertRaises(SamplingValidationError) as ctx:
+            suggest_grid_sample_points(
+                "field-1", degree_polygon, PROJECTED_CRS, 25.0
+            )
+        self.assertIn("lon/lat", str(ctx.exception))
+
+    def test_rejects_degree_multipolygon_with_projected_crs(self) -> None:
+        degree_multipolygon = {
+            "type": "MultiPolygon",
+            "coordinates": [
+                [
+                    [
+                        [-47.0, -24.0],
+                        [-46.99, -24.0],
+                        [-46.99, -23.99],
+                        [-47.0, -23.99],
+                        [-47.0, -24.0],
+                    ]
+                ]
+            ],
+        }
+        with self.assertRaises(SamplingValidationError) as ctx:
+            suggest_grid_sample_points(
+                "field-1", degree_multipolygon, PROJECTED_CRS, 25.0
+            )
+        self.assertIn("lon/lat", str(ctx.exception))
+
+    def test_ten_metre_square_still_yields_single_fallback_point(self) -> None:
+        points = suggest_grid_sample_points(
+            "field-1", SMALL_SQUARE_METRES_GEOJSON, PROJECTED_CRS, 25.0
+        )
+        self.assertEqual(len(points), 1)
+
     def test_rejects_geographic_crs(self) -> None:
         with self.assertRaises(SamplingValidationError):
             suggest_grid_sample_points(

@@ -165,6 +165,13 @@ def suggest_grid_sample_points(
     rejected). ``spacing_m`` must be strictly positive. When no grid centre
     falls inside the polygon (e.g. the polygon is smaller than the spacing), a
     single fallback point is returned at the geometry's representative point.
+
+    Rejects a geometry whose bounding box is under 1 metre in both axes with a
+    ``SamplingValidationError`` mentioning ``lon/lat``: such an extent indicates
+    coordinates supplied in lon/lat degrees rather than projected metres. The
+    1 metre limit is a technical guard against mixed lon/lat + projected-CRS
+    input, not an agronomic rule. Use
+    ``suggest_grid_sample_points_for_lonlat_field`` for lon/lat geometry.
     """
     if not isinstance(spacing_m, (int, float)) or isinstance(spacing_m, bool):
         raise SamplingValidationError("spacing_m must be a positive number")
@@ -203,6 +210,14 @@ def suggest_grid_sample_points(
         raise SamplingValidationError("max_points must be greater than zero")
 
     min_x, min_y, max_x, max_y = polygon.bounds
+
+    if (max_x - min_x) < 1.0 and (max_y - min_y) < 1.0:
+        raise SamplingValidationError(
+            "field_geometry extent is under 1 metre in the projected CRS; "
+            "coordinates look like lon/lat degrees - project them to metres or "
+            "use suggest_grid_sample_points_for_lonlat_field"
+        )
+
     half = spacing_m / 2.0
 
     estimated_cells = ((max_x - min_x) / spacing_m) * ((max_y - min_y) / spacing_m)
