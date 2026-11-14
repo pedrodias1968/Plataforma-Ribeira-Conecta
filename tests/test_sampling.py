@@ -36,7 +36,9 @@ PROJECTED_CRS = "EPSG:31983"
 
 SQUARE_METRES_GEOJSON = {
     "type": "Polygon",
-    "coordinates": [[[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0], [0.0, 0.0]]],
+    "coordinates": [
+        [[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0], [0.0, 0.0]]
+    ],
 }
 
 SMALL_SQUARE_METRES_GEOJSON = {
@@ -85,9 +87,7 @@ class ValidateManagementZoneTest(unittest.TestCase):
         validate_management_zone(POLYGON_GEOJSON, "TERRAIN_VARIABILITY", ("dem",))
 
     def test_accepts_valid_multipolygon(self) -> None:
-        validate_management_zone(
-            MULTIPOLYGON_GEOJSON, "TERRAIN_VARIABILITY", ("dem",)
-        )
+        validate_management_zone(MULTIPOLYGON_GEOJSON, "TERRAIN_VARIABILITY", ("dem",))
 
     def test_rejects_non_dict_geometry(self) -> None:
         with self.assertRaises(SamplingValidationError):
@@ -261,9 +261,7 @@ class SuggestGridSamplePointsTest(unittest.TestCase):
             ],
         }
         with self.assertRaises(SamplingValidationError) as ctx:
-            suggest_grid_sample_points(
-                "field-1", degree_polygon, PROJECTED_CRS, 25.0
-            )
+            suggest_grid_sample_points("field-1", degree_polygon, PROJECTED_CRS, 25.0)
         self.assertIn("lon/lat", str(ctx.exception))
 
     def test_rejects_degree_multipolygon_with_projected_crs(self) -> None:
@@ -295,15 +293,11 @@ class SuggestGridSamplePointsTest(unittest.TestCase):
 
     def test_rejects_geographic_crs(self) -> None:
         with self.assertRaises(SamplingValidationError):
-            suggest_grid_sample_points(
-                "field-1", POLYGON_GEOJSON, "EPSG:4326", 25.0
-            )
+            suggest_grid_sample_points("field-1", POLYGON_GEOJSON, "EPSG:4326", 25.0)
 
     def test_rejects_missing_crs(self) -> None:
         with self.assertRaises(SamplingValidationError):
-            suggest_grid_sample_points(
-                "field-1", SQUARE_METRES_GEOJSON, None, 25.0
-            )
+            suggest_grid_sample_points("field-1", SQUARE_METRES_GEOJSON, None, 25.0)
 
     def test_rejects_zero_spacing(self) -> None:
         with self.assertRaises(SamplingValidationError):
@@ -340,11 +334,17 @@ class SuggestGridSamplePointsTest(unittest.TestCase):
 
     def test_same_input_yields_same_output(self) -> None:
         first = suggest_grid_sample_points(
-            "field-1", SQUARE_METRES_GEOJSON, PROJECTED_CRS, 25.0,
+            "field-1",
+            SQUARE_METRES_GEOJSON,
+            PROJECTED_CRS,
+            25.0,
             generated_at="2026-01-01T00:00:00Z",
         )
         second = suggest_grid_sample_points(
-            "field-1", SQUARE_METRES_GEOJSON, PROJECTED_CRS, 25.0,
+            "field-1",
+            SQUARE_METRES_GEOJSON,
+            PROJECTED_CRS,
+            25.0,
             generated_at="2026-01-01T00:00:00Z",
         )
         self.assertEqual(
@@ -382,9 +382,7 @@ class SuggestGridSamplePointsTest(unittest.TestCase):
 
     def test_rejects_self_intersecting_bowtie(self) -> None:
         with self.assertRaises(SamplingValidationError) as ctx:
-            suggest_grid_sample_points(
-                "field-1", BOWTIE_GEOJSON, PROJECTED_CRS, 1.0
-            )
+            suggest_grid_sample_points("field-1", BOWTIE_GEOJSON, PROJECTED_CRS, 1.0)
         self.assertIn("invalid", str(ctx.exception).lower())
 
     def test_rejects_grid_exceeding_default_max_points(self) -> None:
@@ -433,9 +431,7 @@ class SuggestZoneSamplePointsTest(unittest.TestCase):
         ]
         points = suggest_zone_sample_points(zones)
         self.assertEqual(len(points), 3)
-        self.assertEqual(
-            [p.zone_id for p in points], ["zone-a", "zone-b", "zone-c"]
-        )
+        self.assertEqual([p.zone_id for p in points], ["zone-a", "zone-b", "zone-c"])
 
     def test_point_lies_inside_its_zone(self) -> None:
         zone = self._zone()
@@ -463,9 +459,7 @@ class SuggestZoneSamplePointsTest(unittest.TestCase):
         points = suggest_zone_sample_points([self._zone()])
         self.assertEqual(points[0].status, "DERIVED_LOCATION")
         self.assertEqual(points[0].classification, DataClassification.DERIVED)
-        self.assertEqual(
-            points[0].derivation_method, "ZONE_REPRESENTATIVE_POINT"
-        )
+        self.assertEqual(points[0].derivation_method, "ZONE_REPRESENTATIVE_POINT")
 
     def test_accepts_multipolygon_zone(self) -> None:
         zone = self._zone(geometry=MULTIPOLYGON_GEOJSON)
@@ -488,7 +482,9 @@ class SuggestZoneSamplePointsTest(unittest.TestCase):
             )
 
     def test_rejects_invalid_zone_geometry(self) -> None:
-        zone = self._zone(geometry=BOWTIE_GEOJSON, derivation_method="TERRAIN_VARIABILITY")
+        zone = self._zone(
+            geometry=BOWTIE_GEOJSON, derivation_method="TERRAIN_VARIABILITY"
+        )
         with self.assertRaises(SamplingValidationError):
             suggest_zone_sample_points([zone])
 
@@ -509,9 +505,7 @@ class ConfirmSampleLocationTest(unittest.TestCase):
 
     def test_without_adjustment_uses_suggested_geometry(self) -> None:
         suggestion = self._suggestion()
-        confirmed = confirm_sample_location(
-            suggestion, SQUARE_METRES_GEOJSON, "tech-1"
-        )
+        confirmed = confirm_sample_location(suggestion, SQUARE_METRES_GEOJSON, "tech-1")
         self.assertEqual(confirmed.geometry, suggestion.geometry)
         self.assertFalse(confirmed.adjusted)
         self.assertIsNone(confirmed.adjustment_note)
@@ -520,15 +514,11 @@ class ConfirmSampleLocationTest(unittest.TestCase):
         confirmed = confirm_sample_location(
             self._suggestion(), SQUARE_METRES_GEOJSON, "tech-1"
         )
-        self.assertEqual(
-            confirmed.classification, DataClassification.MANUAL_CONFIRMED
-        )
+        self.assertEqual(confirmed.classification, DataClassification.MANUAL_CONFIRMED)
 
     def test_link_to_suggested_point_is_kept(self) -> None:
         suggestion = self._suggestion()
-        confirmed = confirm_sample_location(
-            suggestion, SQUARE_METRES_GEOJSON, "tech-1"
-        )
+        confirmed = confirm_sample_location(suggestion, SQUARE_METRES_GEOJSON, "tech-1")
         self.assertEqual(confirmed.suggested_point_id, suggestion.point_id)
         self.assertEqual(confirmed.field_id, suggestion.field_id)
 
@@ -598,9 +588,7 @@ class ConfirmSampleLocationTest(unittest.TestCase):
 
     def test_rejects_blank_confirmed_by(self) -> None:
         with self.assertRaises(SamplingValidationError):
-            confirm_sample_location(
-                self._suggestion(), SQUARE_METRES_GEOJSON, "   "
-            )
+            confirm_sample_location(self._suggestion(), SQUARE_METRES_GEOJSON, "   ")
 
     def test_rejects_non_point_adjustment_geometry(self) -> None:
         with self.assertRaises(SamplingValidationError):
@@ -756,7 +744,9 @@ class FeatureCollectionSerializationTest(unittest.TestCase):
             zones_to_feature_collection([self._zone(), object()])
 
     def test_points_feature_collection(self) -> None:
-        result = sample_points_to_feature_collection([self._point("p1"), self._point("p2")])
+        result = sample_points_to_feature_collection(
+            [self._point("p1"), self._point("p2")]
+        )
         self.assertEqual(len(result["features"]), 2)
         json.dumps(result)
         props = result["features"][0]["properties"]
@@ -766,9 +756,9 @@ class FeatureCollectionSerializationTest(unittest.TestCase):
         self.assertEqual(result["features"][0]["geometry"], self._point().geometry)
 
     def test_points_none_zone_id_stays_none(self) -> None:
-        props = sample_points_to_feature_collection(
-            [self._point(zone_id=None)]
-        )["features"][0]["properties"]
+        props = sample_points_to_feature_collection([self._point(zone_id=None)])[
+            "features"
+        ][0]["properties"]
         self.assertIsNone(props["zone_id"])
 
     def test_points_excludes_geometry_from_properties(self) -> None:
@@ -843,9 +833,7 @@ class ReprojectSamplePointsTest(unittest.TestCase):
         forward = reproject_sample_points(
             [original], self.PROJECTED_CRS, self.GEOGRAPHIC_CRS
         )
-        back = reproject_sample_points(
-            forward, self.GEOGRAPHIC_CRS, self.PROJECTED_CRS
-        )
+        back = reproject_sample_points(forward, self.GEOGRAPHIC_CRS, self.PROJECTED_CRS)
         result_x, result_y = back[0].geometry["coordinates"]
         self.assertAlmostEqual(result_x, original.geometry["coordinates"][0], places=6)
         self.assertAlmostEqual(result_y, original.geometry["coordinates"][1], places=6)
@@ -892,9 +880,7 @@ class ReprojectSamplePointsTest(unittest.TestCase):
     def test_original_object_unchanged(self) -> None:
         original = self._point()
         before = original.geometry["coordinates"][:]
-        reproject_sample_points(
-            [original], self.PROJECTED_CRS, self.GEOGRAPHIC_CRS
-        )
+        reproject_sample_points([original], self.PROJECTED_CRS, self.GEOGRAPHIC_CRS)
         self.assertEqual(original.geometry["coordinates"], before)
 
     def test_returns_new_objects(self) -> None:
@@ -936,9 +922,7 @@ class ReprojectSamplePointsTest(unittest.TestCase):
 
     def test_rejects_invalid_target_crs(self) -> None:
         with self.assertRaises(SamplingValidationError):
-            reproject_sample_points(
-                [self._point()], self.PROJECTED_CRS, "not-a-crs"
-            )
+            reproject_sample_points([self._point()], self.PROJECTED_CRS, "not-a-crs")
 
     def test_rejects_wrong_item_type(self) -> None:
         with self.assertRaises(SamplingValidationError):
@@ -960,9 +944,7 @@ class ReprojectSamplePointsTest(unittest.TestCase):
     def test_rejects_non_finite_result(self) -> None:
         original = self._point(coordinates=(float("inf"), float("inf")))
         with self.assertRaises(SamplingValidationError):
-            reproject_sample_points(
-                [original], self.PROJECTED_CRS, self.GEOGRAPHIC_CRS
-            )
+            reproject_sample_points([original], self.PROJECTED_CRS, self.GEOGRAPHIC_CRS)
 
 
 class LonLatGridSamplingTest(unittest.TestCase):
@@ -979,9 +961,7 @@ class LonLatGridSamplingTest(unittest.TestCase):
     UTM_CRS = "EPSG:31983"
 
     def _lonlat_square_from_metres(self, size_m: float = 200.0) -> dict:
-        to_utm = Transformer.from_crs(
-            "EPSG:4326", self.UTM_CRS, always_xy=True
-        )
+        to_utm = Transformer.from_crs("EPSG:4326", self.UTM_CRS, always_xy=True)
         cx, cy = to_utm.transform(self.CENTER_LON, self.CENTER_LAT)
         half = size_m / 2.0
         corners_utm = [
@@ -991,9 +971,7 @@ class LonLatGridSamplingTest(unittest.TestCase):
             (cx - half, cy + half),
             (cx - half, cy - half),
         ]
-        to_lonlat = Transformer.from_crs(
-            self.UTM_CRS, "EPSG:4326", always_xy=True
-        )
+        to_lonlat = Transformer.from_crs(self.UTM_CRS, "EPSG:4326", always_xy=True)
         ring = [list(to_lonlat.transform(x, y)) for x, y in corners_utm]
         return {"type": "Polygon", "coordinates": [ring]}
 
@@ -1036,16 +1014,19 @@ class LonLatGridSamplingTest(unittest.TestCase):
         outside = {
             "type": "Polygon",
             "coordinates": [
-                [[10.0, 50.0], [10.001, 50.0], [10.001, 50.001],
-                 [10.0, 50.001], [10.0, 50.0]]
+                [
+                    [10.0, 50.0],
+                    [10.001, 50.0],
+                    [10.001, 50.001],
+                    [10.0, 50.001],
+                    [10.0, 50.0],
+                ]
             ],
         }
         with self.assertRaises(SamplingValidationError):
             sirgas2000_utm_crs_for(outside)
         with self.assertRaises(SamplingValidationError):
-            suggest_grid_sample_points_for_lonlat_field(
-                "field-1", outside, 50.0
-            )
+            suggest_grid_sample_points_for_lonlat_field("field-1", outside, 50.0)
 
     def test_rejects_invalid_geometry(self) -> None:
         bowtie = {
@@ -1055,22 +1036,23 @@ class LonLatGridSamplingTest(unittest.TestCase):
             ],
         }
         with self.assertRaises(SamplingValidationError):
-            suggest_grid_sample_points_for_lonlat_field(
-                "field-1", bowtie, 50.0
-            )
+            suggest_grid_sample_points_for_lonlat_field("field-1", bowtie, 50.0)
 
     def test_rejects_out_of_range_lonlat(self) -> None:
         out_of_range = {
             "type": "Polygon",
             "coordinates": [
-                [[200.0, -24.5], [200.001, -24.5], [200.001, -24.499],
-                 [200.0, -24.499], [200.0, -24.5]]
+                [
+                    [200.0, -24.5],
+                    [200.001, -24.5],
+                    [200.001, -24.499],
+                    [200.0, -24.499],
+                    [200.0, -24.5],
+                ]
             ],
         }
         with self.assertRaises(SamplingValidationError):
-            suggest_grid_sample_points_for_lonlat_field(
-                "field-1", out_of_range, 50.0
-            )
+            suggest_grid_sample_points_for_lonlat_field("field-1", out_of_range, 50.0)
 
     def test_max_points_is_respected(self) -> None:
         polygon = self._lonlat_square_from_metres()

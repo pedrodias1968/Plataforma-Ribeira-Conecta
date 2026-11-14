@@ -216,7 +216,9 @@ class SamplingPreviewApiTests(unittest.TestCase):
                 DevelopmentIdentityProvider(
                     "other-viewer",
                     AuthContext(
-                        "other-viewer", self.other_tenant.id, roles=frozenset({"VIEWER"})
+                        "other-viewer",
+                        self.other_tenant.id,
+                        roles=frozenset({"VIEWER"}),
                     ),
                 ),
                 settings=settings,

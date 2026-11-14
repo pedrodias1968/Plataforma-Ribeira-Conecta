@@ -69,7 +69,10 @@ from .harvest import HarvestConflict
 from .object_storage import ObjectStorageError
 from .postgres import PostgresStore
 from .raster_tiles import InvalidTile, RasterUnavailable, render_ndvi_tile
-from .sampling import sample_points_to_feature_collection, suggest_grid_sample_points_for_lonlat_field
+from .sampling import (
+    sample_points_to_feature_collection,
+    suggest_grid_sample_points_for_lonlat_field,
+)
 from .service import BoundaryImportConflict, RibeiraApplication
 from .storage import SQLiteStore
 

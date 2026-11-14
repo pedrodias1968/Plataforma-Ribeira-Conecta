@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import math
 import uuid
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, fields, replace
 from typing import Any
 
 from pyproj import CRS, Transformer
@@ -44,9 +44,7 @@ def _reject_if_invalid(geom, label: str) -> None:
     repaired or mutated.
     """
     if not geom.is_valid:
-        raise SamplingValidationError(
-            f"{label} is invalid: {explain_validity(geom)}"
-        )
+        raise SamplingValidationError(f"{label} is invalid: {explain_validity(geom)}")
 
 
 @dataclass(frozen=True)
@@ -295,9 +293,7 @@ def suggest_zone_sample_points(
             raise SamplingValidationError(f"duplicate zone_id: {zone.zone_id}")
         seen_zone_ids.add(zone.zone_id)
 
-        validate_management_zone(
-            zone.geometry, zone.derivation_method, zone.inputs
-        )
+        validate_management_zone(zone.geometry, zone.derivation_method, zone.inputs)
 
         representative = shape(zone.geometry).representative_point()
         x, y = representative.x, representative.y
@@ -375,14 +371,10 @@ def reproject_sample_points(
 
         geometry = point.geometry
         if not isinstance(geometry, dict) or geometry.get("type") != "Point":
-            raise SamplingValidationError(
-                "sample point geometry must be a Point"
-            )
+            raise SamplingValidationError("sample point geometry must be a Point")
         coordinates = geometry.get("coordinates")
         if not coordinates or len(coordinates) != 2:
-            raise SamplingValidationError(
-                "Point coordinates must have two numbers"
-            )
+            raise SamplingValidationError("Point coordinates must have two numbers")
 
         try:
             x, y = transformer.transform(coordinates[0], coordinates[1])
@@ -390,9 +382,7 @@ def reproject_sample_points(
             raise SamplingValidationError(f"reprojection failed: {exc}") from exc
 
         if not (math.isfinite(x) and math.isfinite(y)):
-            raise SamplingValidationError(
-                "reprojected coordinate must be finite"
-            )
+            raise SamplingValidationError("reprojected coordinate must be finite")
 
         reprojected.append(
             replace(
@@ -425,16 +415,12 @@ def sirgas2000_utm_crs_for(geometry_lonlat: dict[str, Any]) -> str:
         raise SamplingValidationError("geometry must not be empty")
 
     centroid = geometry.centroid
-    area_of_interest = AreaOfInterest(
-        centroid.x, centroid.y, centroid.x, centroid.y
-    )
+    area_of_interest = AreaOfInterest(centroid.x, centroid.y, centroid.x, centroid.y)
     candidates = query_utm_crs_info(
         datum_name="SIRGAS 2000", area_of_interest=area_of_interest
     )
     if not candidates:
-        raise SamplingValidationError(
-            "geometry is outside SIRGAS 2000 UTM coverage"
-        )
+        raise SamplingValidationError("geometry is outside SIRGAS 2000 UTM coverage")
 
     chosen = min(candidates, key=lambda info: int(info.code))
     return f"EPSG:{chosen.code}"
@@ -476,9 +462,7 @@ def suggest_grid_sample_points_for_lonlat_field(
     try:
         polygon_lonlat = shape(field_geometry_lonlat)
     except (GEOSException, ValueError, TypeError) as exc:
-        raise SamplingValidationError(
-            f"invalid field_geometry_lonlat: {exc}"
-        ) from exc
+        raise SamplingValidationError(f"invalid field_geometry_lonlat: {exc}") from exc
 
     if polygon_lonlat.is_empty:
         raise SamplingValidationError("field_geometry_lonlat must not be empty")
@@ -509,9 +493,7 @@ def suggest_grid_sample_points_for_lonlat_field(
         max_points=max_points,
     )
 
-    points_lonlat = reproject_sample_points(
-        projected_points, crs_usado, "EPSG:4326"
-    )
+    points_lonlat = reproject_sample_points(projected_points, crs_usado, "EPSG:4326")
     return crs_usado, points_lonlat
 
 
@@ -662,14 +644,14 @@ def _to_feature_collection(
                 f"{label} item must be a {expected_type.__name__}"
             )
         properties = {
-            field_name: _serialize_property_value(getattr(item, field_name))
-            for field_name in item.__dataclass_fields__
-            if field_name != "geometry"
+            f.name: _serialize_property_value(getattr(item, f.name))
+            for f in fields(item)  # type: ignore[arg-type]
+            if f.name != "geometry"
         }
         features.append(
             {
                 "type": "Feature",
-                "geometry": item.geometry,
+                "geometry": getattr(item, "geometry"),
                 "properties": properties,
             }
         )
