@@ -22,7 +22,7 @@ from shapely.ops import transform
 
 
 PROCESS_ENDPOINT = "https://sh.dataspace.copernicus.eu/process/v1"
-TOKEN_ENDPOINT = "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
+TOKEN_ENDPOINT = "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"  # nosec B105 - OAuth token endpoint URL, not a credential
 PROCESS_VERSION = "sentinelhub-s1-rtc-v1"
 
 

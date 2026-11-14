@@ -255,7 +255,7 @@ class CostRepository:
         p = self.placeholder
         self._execute(
             f"INSERT INTO cost_entry ({', '.join(COLUMNS)}) "
-            f"VALUES ({', '.join([p] * len(COLUMNS))})",
+            f"VALUES ({', '.join([p] * len(COLUMNS))})",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
             [
                 item.id,
                 item.tenant_id,
@@ -279,7 +279,7 @@ class CostRepository:
         p = self.placeholder
         row = self._execute(
             f"SELECT {', '.join(COLUMNS)} FROM cost_entry "
-            f"WHERE tenant_id = {p} AND id = {p}",
+            f"WHERE tenant_id = {p} AND id = {p}",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
             [tenant_id, entry_id],
         ).fetchone()
         return self._hydrate(row) if row else None
@@ -288,7 +288,7 @@ class CostRepository:
         p = self.placeholder
         return (
             self._execute(
-                f"SELECT 1 FROM cost_entry WHERE tenant_id = {p} AND supersedes_id = {p}",
+                f"SELECT 1 FROM cost_entry WHERE tenant_id = {p} AND supersedes_id = {p}",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
                 [tenant_id, entry_id],
             ).fetchone()
             is not None
@@ -324,7 +324,7 @@ class CostRepository:
         rows = self._execute(
             f"SELECT {', '.join('r.' + column for column in COLUMNS)} "
             f"FROM cost_entry r WHERE {' AND '.join(clauses)} "
-            "ORDER BY r.entry_date DESC, r.created_at DESC, r.id",
+            "ORDER BY r.entry_date DESC, r.created_at DESC, r.id",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
             params,
         ).fetchall()
         return [self._hydrate(row) for row in rows]

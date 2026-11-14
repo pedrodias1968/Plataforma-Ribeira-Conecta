@@ -300,7 +300,7 @@ class AnaHidroWebAdapter:
                     "Accept": "application/json",
                 },
             )
-            with urllib.request.urlopen(req, timeout=30) as response:
+            with urllib.request.urlopen(req, timeout=30) as response:  # nosec B310 - fixed official HTTPS endpoint defined in code
                 raw = response.read(10_000).decode("utf-8", errors="replace")
                 try:
                     data = json.loads(raw)
@@ -367,7 +367,7 @@ class AnaHidroWebAdapter:
                     "Accept": "application/json",
                 },
             )
-            with urllib.request.urlopen(req, timeout=30) as response:
+            with urllib.request.urlopen(req, timeout=30) as response:  # nosec B310 - fixed official HTTPS endpoint defined in code
                 raw = response.read(100_000).decode("utf-8", errors="replace")
                 try:
                     data = json.loads(raw)
@@ -436,7 +436,7 @@ class AnaHidroWebAdapter:
                     "Accept": "application/json",
                 },
             )
-            with urllib.request.urlopen(req, timeout=30) as response:
+            with urllib.request.urlopen(req, timeout=30) as response:  # nosec B310 - fixed official HTTPS endpoint defined in code
                 raw = response.read(50_000).decode("utf-8", errors="replace")
                 try:
                     data = json.loads(raw)
@@ -710,7 +710,7 @@ def _fetch_text(
     request = urllib.request.Request(
         url, headers={"Accept": "text/html,application/xhtml+xml"}
     )
-    with urllib.request.urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310 -- fixed official URLs below
+    with urllib.request.urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310 -- fixed official URLs below  # nosec B310 - fixed official HTTPS endpoint defined in code
         payload = response.read(max_bytes + 1)
     if len(payload) > max_bytes:
         raise ValueError("provider response exceeds size limit")

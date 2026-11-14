@@ -187,7 +187,7 @@ class KmlBoundaryImportParsingTests(unittest.TestCase):
         unsafe = (
             '<?xml version="1.0" encoding="UTF-16"?>'
             '<!DOCTYPE kml [<!ENTITY x "boom">]>'
-            "<kml xmlns=\"http://www.opengis.net/kml/2.2\"><Placemark><Polygon>"
+            '<kml xmlns="http://www.opengis.net/kml/2.2"><Placemark><Polygon>'
             "<outerBoundaryIs><LinearRing><coordinates>"
             "-47.0,-24.0 &x; -46.99,-24.0 -46.99,-24.01 -47.0,-24.01 -47.0,-24.0"
             "</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark></kml>"

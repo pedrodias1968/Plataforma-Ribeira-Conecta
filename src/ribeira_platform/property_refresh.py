@@ -437,7 +437,7 @@ class PropertyRefreshService:
                 now,
             )
             row = self.application.store.connection.execute(
-                f"SELECT * FROM property_refresh_run WHERE tenant_id={p} AND id={p}",
+                f"SELECT * FROM property_refresh_run WHERE tenant_id={p} AND id={p}",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
                 [run["tenant_id"], run["id"]],
             ).fetchone()
             return dict(row)

@@ -254,7 +254,7 @@ class SoilRepository:
                  depth_top_cm, depth_bottom_cm, collection_date, collector_name,
                  {location_column}, location_crs, classification, source_reference,
                  status, created_at
-               ) VALUES ({p},{p},{p},{p},{p},{p},{p},{p},{p},{location_value},{p},{p},{p},{p},{p})""",
+               ) VALUES ({p},{p},{p},{p},{p},{p},{p},{p},{p},{location_value},{p},{p},{p},{p},{p})""",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
             [
                 item.id,
                 item.tenant_id,
@@ -288,7 +288,7 @@ class SoilRepository:
                        {location_expr} AS location_geojson, location_crs, classification,
                        source_reference, status, created_at
                 FROM soil_sample_point
-                WHERE tenant_id = {p} AND id = {p}""",
+                WHERE tenant_id = {p} AND id = {p}""",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
             [tenant_id, sample_id],
         )
         row = cursor.fetchone()
@@ -319,7 +319,7 @@ class SoilRepository:
                        source_reference, status, created_at
                 FROM soil_sample_point
                 WHERE tenant_id = {p} AND property_id = {p}{field_clause}
-                ORDER BY created_at DESC""",
+                ORDER BY created_at DESC""",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
             params,
         )
         return [self._hydrate_sample_point(row) for row in cursor.fetchall()]
@@ -339,7 +339,7 @@ class SoilRepository:
                  aluminum_cmolc_dm3, potential_acidity_h_al, cation_exchange_capacity_cec,
                  base_saturation_percent, clay_percent, silt_percent, sand_percent,
                  raw_attributes, classification, created_at
-               ) VALUES ({p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{raw_expr},{p},{p})""",
+               ) VALUES ({p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{raw_expr},{p},{p})""",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
             [
                 item.id,
                 item.tenant_id,
@@ -381,7 +381,7 @@ class SoilRepository:
                        raw_attributes, classification, created_at
                 FROM soil_lab_analysis
                 WHERE tenant_id = {p} AND sample_point_id = {p}
-                ORDER BY report_date DESC, created_at DESC""",
+                ORDER BY report_date DESC, created_at DESC""",  # nosec B608 - only code-defined identifiers and placeholders are interpolated; values are bound parameters
             [tenant_id, sample_point_id],
         )
         return [self._hydrate_lab_analysis(row) for row in cursor.fetchall()]
