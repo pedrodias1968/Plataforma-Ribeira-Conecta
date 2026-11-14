@@ -27,7 +27,6 @@ from rasterio.transform import from_origin
 
 from ribeira_platform.geospatial import (
     GeospatialQuality,
-    NdviStatistics,
     SatelliteAsset,
 )
 from ribeira_platform.object_storage import LocalObjectStorage
@@ -132,9 +131,7 @@ class AlgorithmParametersTests(unittest.TestCase):
 
 class RasterProcessingErrorTests(unittest.TestCase):
     def test_preserves_quality_and_message(self) -> None:
-        error = RasterProcessingError(
-            GeospatialQuality.PROCESSING_FAILED, "boom"
-        )
+        error = RasterProcessingError(GeospatialQuality.PROCESSING_FAILED, "boom")
         self.assertEqual(error.quality, GeospatialQuality.PROCESSING_FAILED)
         self.assertEqual(str(error), "boom")
 
@@ -197,9 +194,7 @@ class ValidateCogTests(unittest.TestCase):
 
     def test_rejects_non_nan_nodata(self) -> None:
         path = self.root / "nodata.tif"
-        _write_cog(
-            path, np.zeros((8, 8)), transform=self.transform, nodata=-9999.0
-        )
+        _write_cog(path, np.zeros((8, 8)), transform=self.transform, nodata=-9999.0)
         with self.assertRaises(ValueError):
             validate_cog(path)
 
@@ -326,14 +321,10 @@ class NdviProcessorTests(unittest.TestCase):
             self.assertAlmostEqual(float(values.mean()), 0.5, places=6)
 
     def test_unresolvable_band_roles_raise_asset_unavailable(self) -> None:
-        assets = [
-            _asset("x", "Blue (band 2) - 10m", ["reflectance"], "local://x.tif")
-        ]
+        assets = [_asset("x", "Blue (band 2) - 10m", ["reflectance"], "local://x.tif")]
         with self.assertRaises(RasterProcessingError) as context:
             self.processor.process(assets, AOI, "derived/ndvi.tif")
-        self.assertEqual(
-            context.exception.quality, GeospatialQuality.ASSET_UNAVAILABLE
-        )
+        self.assertEqual(context.exception.quality, GeospatialQuality.ASSET_UNAVAILABLE)
 
     def test_missing_local_asset_raises_asset_unavailable(self) -> None:
         assets = [
@@ -352,17 +343,13 @@ class NdviProcessorTests(unittest.TestCase):
         ]
         with self.assertRaises(RasterProcessingError) as context:
             self.processor.process(assets, AOI, "derived/ndvi.tif")
-        self.assertEqual(
-            context.exception.quality, GeospatialQuality.ASSET_UNAVAILABLE
-        )
+        self.assertEqual(context.exception.quality, GeospatialQuality.ASSET_UNAVAILABLE)
 
     def test_out_of_range_ndvi_raises_quality_error(self) -> None:
         assets = self._assets("scene", red_value=1.0, nir_value=-3.0)
         with self.assertRaises(RasterProcessingError) as context:
             self.processor.process(assets, AOI, "derived/ndvi.tif")
-        self.assertEqual(
-            context.exception.quality, GeospatialQuality.NDVI_OUT_OF_RANGE
-        )
+        self.assertEqual(context.exception.quality, GeospatialQuality.NDVI_OUT_OF_RANGE)
 
     def test_quality_policy_records_scl_masking(self) -> None:
         scl = np.full((4, 4), 4, dtype="uint8")
@@ -514,9 +501,7 @@ class TemporalDeltaProcessorTests(unittest.TestCase):
                 empty_ref,
                 "derived/delta.tif",
             )
-        self.assertEqual(
-            context.exception.quality, GeospatialQuality.PROCESSING_FAILED
-        )
+        self.assertEqual(context.exception.quality, GeospatialQuality.PROCESSING_FAILED)
 
 
 if __name__ == "__main__":

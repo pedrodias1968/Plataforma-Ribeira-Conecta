@@ -273,7 +273,7 @@ class AnaHidroWebAdapter:
             ident = pwd = None
             for line in lines:
                 if line.startswith("ANA_IDENTIFIER="):
-                    ident = line.split("=", 1)[1].strip().strip('"\'')
+                    ident = line.split("=", 1)[1].strip().strip("\"'")
                 elif line.startswith("ANA_PASSWORD="):
                     pwd = line.split("=", 1)[1].strip()
             if ident and pwd:

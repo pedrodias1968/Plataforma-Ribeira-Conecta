@@ -224,9 +224,7 @@ class EvidenceEngineTests(unittest.TestCase):
         self.assertEqual(evidence.tenant_id, TENANT)
         self.assertEqual(evidence.evidence_type, "OBSERVATION")
         self.assertEqual(evidence.reference_id, observation.id)
-        self.assertEqual(
-            evidence.classification, DataClassification.OFFICIAL_SOURCE
-        )
+        self.assertEqual(evidence.classification, DataClassification.OFFICIAL_SOURCE)
         self.assertEqual(evidence.source_id, "source-1")
         self.assertEqual(evidence.observed_at, observation.observation_timestamp)
         self.assertEqual(
@@ -235,9 +233,7 @@ class EvidenceEngineTests(unittest.TestCase):
         )
         self.assertEqual(
             evidence.limitations,
-            [
-                "sensor/source quality is not independently validated by this slice"
-            ],
+            ["sensor/source quality is not independently validated by this slice"],
         )
 
     def test_reuses_existing_evidence_for_same_reference(self) -> None:
@@ -251,9 +247,7 @@ class EvidenceEngineTests(unittest.TestCase):
             source_id="source-1",
             observed_at=observation.observation_timestamp,
         )
-        store = FakeStore(
-            evidence_by_reference={(TENANT, observation.id): existing}
-        )
+        store = FakeStore(evidence_by_reference={(TENANT, observation.id): existing})
         engine = EvidenceEngine(store)
 
         evidence = engine.evidence_for_observation(observation)
@@ -274,9 +268,7 @@ class EvidenceEngineTests(unittest.TestCase):
 
 
 class TemporalDeltaInvalidInputTests(unittest.TestCase):
-    def _assert_inconclusive_provenance(
-        self, result, evidence_id: str | None
-    ) -> None:
+    def _assert_inconclusive_provenance(self, result, evidence_id: str | None) -> None:
         decision = result.decision
         self.assertEqual(decision.tenant_id, TENANT)
         self.assertEqual(decision.property_id, PROPERTY_ID)
@@ -360,9 +352,7 @@ class TemporalDeltaRuleSelectionTests(unittest.TestCase):
         )
 
     def test_asset_scope_is_rejected(self) -> None:
-        store = FakeStore(
-            rules=[make_rule(metric=self.metric, scope_type="ASSET")]
-        )
+        store = FakeStore(rules=[make_rule(metric=self.metric, scope_type="ASSET")])
         engine = DecisionEngine(store)
 
         with self.assertRaisesRegex(
@@ -376,11 +366,15 @@ class TemporalDeltaRuleSelectionTests(unittest.TestCase):
     def test_equally_specific_rules_are_conflicting(self) -> None:
         rules = [
             make_rule(
-                rule_id="property-a", version=1, metric=self.metric,
+                rule_id="property-a",
+                version=1,
+                metric=self.metric,
                 scope_type="PROPERTY",
             ),
             make_rule(
-                rule_id="property-b", version=2, metric=self.metric,
+                rule_id="property-b",
+                version=2,
+                metric=self.metric,
                 scope_type="PROPERTY",
             ),
         ]
@@ -396,9 +390,7 @@ class TemporalDeltaRuleSelectionTests(unittest.TestCase):
         self.assertEqual(decision.status, DecisionStatus.CONFLICTING)
         self.assertEqual(decision.selected_rule_scope_type, "PROPERTY")
         self.assertIsNone(decision.rule_id)
-        self.assertEqual(
-            decision.conflicts[0]["type"], "equally_specific_active_rules"
-        )
+        self.assertEqual(decision.conflicts[0]["type"], "equally_specific_active_rules")
         self.assertEqual(decision.conflicts[0]["scope_type"], "PROPERTY")
         self.assertEqual(
             decision.conflicts[0]["rule_versions"],
@@ -413,18 +405,29 @@ class TemporalDeltaRuleSelectionTests(unittest.TestCase):
 
     def test_field_scope_wins_over_property(self) -> None:
         field_rule = make_rule(
-            rule_id="field-rule", metric=self.metric, scope_type="FIELD",
-            operator="<", threshold=0.4,
+            rule_id="field-rule",
+            metric=self.metric,
+            scope_type="FIELD",
+            operator="<",
+            threshold=0.4,
         )
         property_rule = make_rule(
-            rule_id="property-rule", metric=self.metric, scope_type="PROPERTY",
-            operator="<", threshold=0.4,
+            rule_id="property-rule",
+            metric=self.metric,
+            scope_type="PROPERTY",
+            operator="<",
+            threshold=0.4,
         )
         store = FakeStore(rules=[property_rule, field_rule])
         engine = DecisionEngine(store)
 
         result = engine.evaluate_temporal_delta(
-            TENANT, PROPERTY, "product-1", 0.5, "evidence-1", True,
+            TENANT,
+            PROPERTY,
+            "product-1",
+            0.5,
+            "evidence-1",
+            True,
             field_id="field-1",
             field_boundary_version=3,
             field_boundary_checksum="checksum-3",
@@ -456,8 +459,11 @@ class TemporalDeltaRuleSelectionTests(unittest.TestCase):
 
     def test_customer_scope_snapshots_customer_context(self) -> None:
         rule = make_rule(
-            metric=self.metric, scope_type="CUSTOMER",
-            scope_customer_id="customer-1", operator="<", threshold=0.4,
+            metric=self.metric,
+            scope_type="CUSTOMER",
+            scope_customer_id="customer-1",
+            operator="<",
+            threshold=0.4,
         )
         store = FakeStore(rules=[rule])
         engine = DecisionEngine(store)
@@ -481,7 +487,12 @@ class TemporalDeltaOutcomeTests(unittest.TestCase):
         engine = DecisionEngine(store)
 
         result = engine.evaluate_temporal_delta(
-            TENANT, PROPERTY, "product-1", 0.2, "evidence-1", True,
+            TENANT,
+            PROPERTY,
+            "product-1",
+            0.2,
+            "evidence-1",
+            True,
             actor="agronomist",
         )
 
@@ -523,12 +534,8 @@ class TemporalDeltaOutcomeTests(unittest.TestCase):
         )
         self.assertEqual(result.action.decision_id, decision.id)
         self.assertEqual(store.audits[0]["payload"]["reason"], "rule_triggered")
-        self.assertEqual(
-            store.audits[0]["payload"]["alert_id"], result.alert.id
-        )
-        self.assertEqual(
-            store.audits[0]["payload"]["action_id"], result.action.id
-        )
+        self.assertEqual(store.audits[0]["payload"]["alert_id"], result.alert.id)
+        self.assertEqual(store.audits[0]["payload"]["action_id"], result.action.id)
 
     def test_not_triggered_rule_creates_no_alert_or_action(self) -> None:
         rule = make_rule(metric=self.metric, operator="<", threshold=0.5)
@@ -551,9 +558,7 @@ class TemporalDeltaOutcomeTests(unittest.TestCase):
         self.assertIsNone(result.action)
         self.assertEqual(store.created_alerts, [])
         self.assertEqual(store.created_actions, [])
-        self.assertEqual(
-            store.audits[0]["payload"]["reason"], "rule_not_triggered"
-        )
+        self.assertEqual(store.audits[0]["payload"]["reason"], "rule_not_triggered")
 
 
 class EvaluateContextEvidenceTests(unittest.TestCase):
@@ -587,8 +592,11 @@ class EvaluateContextEvidenceTests(unittest.TestCase):
         engine = DecisionEngine(store)
 
         result = engine.evaluate(
-            TENANT, PROPERTY, field_id="field-1",
-            field_boundary_version=2, field_boundary_checksum="checksum-2",
+            TENANT,
+            PROPERTY,
+            field_id="field-1",
+            field_boundary_version=2,
+            field_boundary_checksum="checksum-2",
         )
 
         decision = result.decision
@@ -646,18 +654,14 @@ class EvaluateContextEvidenceTests(unittest.TestCase):
         self.assertEqual(decision.classification, DataClassification.CONFLICTING)
         self.assertEqual(decision.status, DecisionStatus.CONFLICTING)
         self.assertEqual(decision.selected_rule_scope_type, "PROPERTY")
-        self.assertEqual(
-            decision.conflicts[0]["type"], "equally_specific_active_rules"
-        )
+        self.assertEqual(decision.conflicts[0]["type"], "equally_specific_active_rules")
         self.assertEqual(
             decision.recommended_action,
             {"type": "resolve_rule_conflict", "responsible_user_id": None},
         )
         self.assertIsNone(result.alert)
         self.assertIsNone(result.action)
-        self.assertEqual(
-            store.audits[0]["payload"]["reason"], "rule_scope_conflict"
-        )
+        self.assertEqual(store.audits[0]["payload"]["reason"], "rule_scope_conflict")
 
     def test_missing_valid_observation_is_inconclusive(self) -> None:
         store = FakeStore(
@@ -677,20 +681,20 @@ class EvaluateContextEvidenceTests(unittest.TestCase):
         )
         self.assertEqual(decision.missing_data, ["soil_moisture observation"])
         self.assertEqual(decision.rule_id, "rule-1")
-        self.assertEqual(
-            store.audits[0]["payload"]["reason"], "missing_observation"
-        )
+        self.assertEqual(store.audits[0]["payload"]["reason"], "missing_observation")
         self.assertEqual(store.created_alerts, [])
         self.assertEqual(store.created_actions, [])
 
     def test_conflicting_observations_create_alert_and_action(self) -> None:
         observations = [
             make_observation(
-                observation_id="obs-a", value=0.2,
+                observation_id="obs-a",
+                value=0.2,
                 observation_timestamp="2026-09-11T10:00:00+00:00",
             ),
             make_observation(
-                observation_id="obs-b", value=0.4,
+                observation_id="obs-b",
+                value=0.4,
                 observation_timestamp="2026-09-11T10:00:00+00:00",
             ),
         ]
@@ -707,11 +711,11 @@ class EvaluateContextEvidenceTests(unittest.TestCase):
             "Conclusão inconclusiva devido a dados conflitantes de umidade do solo.",
         )
         self.assertEqual(decision.rule_id, "rule-1")
-        self.assertEqual(decision.conflicts[0]["timestamp"], "2026-09-11T10:00:00+00:00")
-        self.assertEqual(decision.conflicts[0]["values"], [0.2, 0.4])
         self.assertEqual(
-            decision.conflicts[0]["observation_ids"], ["obs-a", "obs-b"]
+            decision.conflicts[0]["timestamp"], "2026-09-11T10:00:00+00:00"
         )
+        self.assertEqual(decision.conflicts[0]["values"], [0.2, 0.4])
+        self.assertEqual(decision.conflicts[0]["observation_ids"], ["obs-a", "obs-b"])
         self.assertEqual(
             decision.recommended_action,
             {"type": "resolve_data_conflict", "responsible_user_id": None},
@@ -723,15 +727,11 @@ class EvaluateContextEvidenceTests(unittest.TestCase):
         self.assertEqual(result.alert.alert_type, "DATA_CONFLICT")
         self.assertEqual(result.alert.severity, "HIGH")
         self.assertEqual(result.action.action_type, "resolver conflito de dados")
-        self.assertEqual(
-            store.audits[0]["payload"]["reason"], "data_conflict"
-        )
+        self.assertEqual(store.audits[0]["payload"]["reason"], "data_conflict")
 
     def test_triggered_rule_creates_alert_and_action(self) -> None:
         rule = make_rule(operator="<", threshold=0.3, severity="HIGH")
-        store = FakeStore(
-            observations=[make_observation(value=0.2)], rules=[rule]
-        )
+        store = FakeStore(observations=[make_observation(value=0.2)], rules=[rule])
         engine = DecisionEngine(store)
 
         result = engine.evaluate(TENANT, PROPERTY)
@@ -773,15 +773,11 @@ class EvaluateContextEvidenceTests(unittest.TestCase):
             "Possível estresse hídrico: inspeção recomendada",
         )
         self.assertEqual(result.action.action_type, "inspeção de campo")
-        self.assertEqual(
-            store.audits[0]["payload"]["reason"], "rule_triggered"
-        )
+        self.assertEqual(store.audits[0]["payload"]["reason"], "rule_triggered")
 
     def test_not_triggered_rule_creates_no_alert_or_action(self) -> None:
         rule = make_rule(operator="<", threshold=0.3)
-        store = FakeStore(
-            observations=[make_observation(value=0.9)], rules=[rule]
-        )
+        store = FakeStore(observations=[make_observation(value=0.9)], rules=[rule])
         engine = DecisionEngine(store)
 
         result = engine.evaluate(TENANT, PROPERTY)
@@ -798,18 +794,18 @@ class EvaluateContextEvidenceTests(unittest.TestCase):
         self.assertIsNone(result.action)
         self.assertEqual(store.created_alerts, [])
         self.assertEqual(store.created_actions, [])
-        self.assertEqual(
-            store.audits[0]["payload"]["reason"], "rule_not_triggered"
-        )
+        self.assertEqual(store.audits[0]["payload"]["reason"], "rule_not_triggered")
 
     def test_uses_latest_observation_by_timestamp(self) -> None:
         observations = [
             make_observation(
-                observation_id="old", value=0.1,
+                observation_id="old",
+                value=0.1,
                 observation_timestamp="2026-09-11T09:00:00+00:00",
             ),
             make_observation(
-                observation_id="new", value=0.9,
+                observation_id="new",
+                value=0.9,
                 observation_timestamp="2026-09-11T11:00:00+00:00",
             ),
         ]
@@ -854,17 +850,19 @@ class EvaluateContextEvidenceExtensionsTests(unittest.TestCase):
     def test_asset_scope_rule_wins_over_property(self) -> None:
         rules = [
             make_rule(
-                rule_id="property-rule", scope_type="PROPERTY",
-                operator="<", threshold=0.3,
+                rule_id="property-rule",
+                scope_type="PROPERTY",
+                operator="<",
+                threshold=0.3,
             ),
             make_rule(
-                rule_id="asset-rule", scope_type="ASSET",
-                operator="<", threshold=0.3,
+                rule_id="asset-rule",
+                scope_type="ASSET",
+                operator="<",
+                threshold=0.3,
             ),
         ]
-        store = FakeStore(
-            observations=[make_observation(value=0.2)], rules=rules
-        )
+        store = FakeStore(observations=[make_observation(value=0.2)], rules=rules)
         engine = DecisionEngine(store)
 
         result = engine.evaluate(
@@ -947,20 +945,20 @@ class EvaluateContextEvidenceExtensionsTests(unittest.TestCase):
         self.assertEqual(decision.evidence_ids, [])
         self.assertEqual(decision.missing_data, ["soil_moisture observation"])
         self.assertEqual(decision.rule_id, "rule-1")
-        self.assertEqual(
-            store.audits[0]["payload"]["reason"], "missing_observation"
-        )
+        self.assertEqual(store.audits[0]["payload"]["reason"], "missing_observation")
 
 
 class EvaluateObservationEdgeCaseTests(unittest.TestCase):
     def test_same_timestamp_same_value_is_not_a_conflict(self) -> None:
         observations = [
             make_observation(
-                observation_id="obs-a", value=0.9,
+                observation_id="obs-a",
+                value=0.9,
                 observation_timestamp="2026-09-11T10:00:00+00:00",
             ),
             make_observation(
-                observation_id="obs-b", value=0.9,
+                observation_id="obs-b",
+                value=0.9,
                 observation_timestamp="2026-09-11T10:00:00+00:00",
             ),
         ]
@@ -994,11 +992,15 @@ class EvaluateObservationEdgeCaseTests(unittest.TestCase):
     def test_customer_scope_conflict_snapshots_single_customer(self) -> None:
         rules = [
             make_rule(
-                rule_id="customer-a", version=1, scope_type="CUSTOMER",
+                rule_id="customer-a",
+                version=1,
+                scope_type="CUSTOMER",
                 scope_customer_id="customer-1",
             ),
             make_rule(
-                rule_id="customer-b", version=2, scope_type="CUSTOMER",
+                rule_id="customer-b",
+                version=2,
+                scope_type="CUSTOMER",
                 scope_customer_id="customer-1",
             ),
         ]
@@ -1017,11 +1019,15 @@ class EvaluateObservationEdgeCaseTests(unittest.TestCase):
     ) -> None:
         rules = [
             make_rule(
-                rule_id="customer-a", version=1, scope_type="CUSTOMER",
+                rule_id="customer-a",
+                version=1,
+                scope_type="CUSTOMER",
                 scope_customer_id="customer-1",
             ),
             make_rule(
-                rule_id="customer-b", version=2, scope_type="CUSTOMER",
+                rule_id="customer-b",
+                version=2,
+                scope_type="CUSTOMER",
                 scope_customer_id="customer-2",
             ),
         ]
@@ -1045,18 +1051,14 @@ class EvaluateObservationEdgeCaseTests(unittest.TestCase):
         self.assertEqual(audit["actor"], "agronomist")
         self.assertEqual(audit["event_type"], "DECISION_CREATED")
         self.assertEqual(audit["entity_type"], "decision")
-        self.assertEqual(
-            audit["payload"]["status"], DecisionStatus.ACTIONABLE.value
-        )
+        self.assertEqual(audit["payload"]["status"], DecisionStatus.ACTIONABLE.value)
         self.assertEqual(audit["payload"]["rule_id"], "rule-1")
         self.assertIsNone(audit["payload"]["subject_asset_id"])
         self.assertIsNone(audit["payload"]["subject_field_id"])
 
 
 class InfrastructureBoundTests(unittest.TestCase):
-    @unittest.skip(
-        "requires SQLiteStore persistence; covered by integration tests"
-    )
+    @unittest.skip("requires SQLiteStore persistence; covered by integration tests")
     def test_real_store_persistence(self) -> None:
         pass
 

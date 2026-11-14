@@ -248,9 +248,7 @@ class AssetHrefTests(unittest.TestCase):
     def test_allowlisted_https_host(self) -> None:
         adapter = self._adapter()
         self.assertTrue(
-            adapter.asset_href_allowed(
-                "https://stac.dataspace.copernicus.eu/foo.tif"
-            )
+            adapter.asset_href_allowed("https://stac.dataspace.copernicus.eu/foo.tif")
         )
 
     def test_s3_scheme_with_allowlisted_host(self) -> None:
@@ -346,9 +344,7 @@ class SearchTests(unittest.TestCase):
                 {"features": [{"id": "b"}], "links": []},
             ]
         )
-        result = adapter.search(
-            _request(), {"type": "Point", "coordinates": [0, 0]}
-        )
+        result = adapter.search(_request(), {"type": "Point", "coordinates": [0, 0]})
         self.assertEqual([item["id"] for item in result.items], ["a", "b"])
         self.assertEqual(adapter.calls[1][0], "GET")
         self.assertIsNone(adapter.calls[1][2])

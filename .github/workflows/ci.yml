@@ -69,6 +69,7 @@ jobs:
       - name: Run PostgreSQL/PostGIS integration tests
         env:
           RIBEIRA_TEST_DATABASE_URL: postgresql://ribeira_app:ribeira_app_ci_only@127.0.0.1:55432/ribeira_dev
+          RIBEIRA_TEST_MIGRATION_DATABASE_URL: postgresql://ribeira_admin:ribeira_admin_ci_only@127.0.0.1:55432/ribeira_dev
         run: PYTHONPATH=src python -m unittest discover -s tests/integration -v
 
   security:
