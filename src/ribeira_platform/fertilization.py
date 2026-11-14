@@ -91,7 +91,10 @@ def validate_application(
         )
     amount: float | None = None
     if quantity is not None:
-        assert quantity_unit is not None
+        if quantity_unit is None:
+            raise FertilizationValidationError(
+                "quantity_unit is required when quantity is informed"
+            )
         if quantity_unit not in QUANTITY_UNITS:
             raise FertilizationValidationError(
                 f"quantity_unit must be one of {', '.join(QUANTITY_UNITS)}"

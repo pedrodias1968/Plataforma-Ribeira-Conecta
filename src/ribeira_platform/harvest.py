@@ -175,7 +175,8 @@ def validate_harvest_discard(
 
 def clean_required(value: str, label: str) -> str:
     cleaned = _clean_text(value, label=label, required=True)
-    assert cleaned is not None
+    if cleaned is None:
+        raise HarvestValidationError(f"{label} is required")
     return cleaned
 
 
